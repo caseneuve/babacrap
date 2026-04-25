@@ -82,22 +82,36 @@
   (str var (when (pos? arity-index)
              (str "#" arity-index))))
 
+(defn result-lines
+  [{:keys [filename row complexity coverage tracked-forms covered-forms crap]
+    :as result}]
+  [(format "%s:%s %s" filename row (function-label result))
+   (format "  complexity: %s" complexity)
+   (format "  coverage:   %s (%s/%s forms)"
+           (pct coverage) covered-forms tracked-forms)
+   (format "  CRAP:       %s" (format-score crap))])
+
+(defn format-text [results]
+  (str/join
+   \newline
+   (if (seq results)
+     (concat ["CRAP analysis" "-------------"]
+             (mapcat result-lines results))
+     ["No functions found."])))
+
 (defn print-text [results]
-  (if (seq results)
-    (do
-      (println "CRAP analysis")
-      (println "-------------")
-      (doseq [{:keys [filename row complexity coverage tracked-forms covered-forms crap]
-               :as result} results]
-        (println (format "%s:%s %s" filename row (function-label result)))
-        (println (format "  complexity: %s" complexity))
-        (println (format "  coverage:   %s (%s/%s forms)"
-                         (pct coverage) covered-forms tracked-forms))
-        (println (format "  CRAP:       %s" (format-score crap)))))
-    (println "No functions found.")))
+  (println (format-text results)))
 
 (defn over-threshold [threshold results]
   (filter #(> (:crap %) threshold) results))
+
+(defn report [threshold results]
+  {:results results
+   :failures (vec (over-threshold threshold results))
+   :threshold threshold})
+
+(defn exit-code [{:keys [failures]}]
+  (if (seq failures) 1 0))
 
 (defn usage [summary]
   (str/join
@@ -109,6 +123,16 @@
     "Options:"
     summary]))
 
+(defn error-text [errors summary]
+  (str/join
+   \newline
+   (concat errors ["" (usage summary)])))
+
+(defn print-report [{:keys [results] :as report-data} format]
+  (case format
+    :edn (pprint/pprint report-data)
+    :text (print-text results)))
+
 (defn run [args]
   (let [{:keys [options errors summary]} (cli/parse-opts args cli-options)
         options (merge-defaults options)]
@@ -118,20 +142,14 @@
 
       (seq errors)
       (do (binding [*out* *err*]
-            (doseq [e errors] (println e))
-            (println)
-            (println (usage summary)))
+            (println (error-text errors summary)))
           2)
 
       :else
-      (let [results (analyze options)
-            failures (over-threshold (:crap-threshold options) results)]
-        (case (:format options)
-          :edn (pprint/pprint {:results results
-                               :failures (vec failures)
-                               :threshold (:crap-threshold options)})
-          :text (print-text results))
-        (if (seq failures) 1 0)))))
+      (let [report-data (report (:crap-threshold options)
+                                (analyze options))]
+        (print-report report-data (:format options))
+        (exit-code report-data)))))
 
 (defn -main [& args]
   (let [exit-code (run args)]

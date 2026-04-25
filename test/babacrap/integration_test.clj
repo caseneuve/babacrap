@@ -73,7 +73,38 @@
                                     "--src" "test/fixtures/src"
                                     "--format" "edn"
                                     "--crap-threshold" "999"])))
-      (is (zero? @exit)))))
+      (is (zero? @exit))))
+  (testing "CRAP CLI exit code follows threshold failures"
+    (with-redefs [babacrap/analyze (fn [_]
+                                     [{:var 'demo/f
+                                       :arity-index 0
+                                       :filename "src/demo.clj"
+                                       :row 1
+                                       :complexity 5
+                                       :coverage 0.0
+                                       :tracked-forms 10
+                                       :covered-forms 0
+                                       :crap 30.1}])]
+      (let [exit (atom nil)]
+        (with-out-str
+          (reset! exit (babacrap/run ["--format" "edn" "--crap-threshold" "30"])))
+        (is (= 1 @exit)))
+      (let [exit (atom nil)]
+        (with-out-str
+          (reset! exit (babacrap/run ["--format" "edn" "--crap-threshold" "31"])))
+        (is (= 0 @exit)))))
+  (testing "CRAP CLI returns usage exit codes for help and invalid args"
+    (let [exit (atom nil)]
+      (with-out-str
+        (reset! exit (babacrap/run ["--help"])))
+      (is (= 0 @exit)))
+    (let [err (java.io.StringWriter.)
+          exit (atom nil)]
+      (binding [*err* err]
+        (with-out-str
+          (reset! exit (babacrap/run ["--format" "json"]))))
+      (is (= 2 @exit))
+      (is (str/includes? (str err) "Must be text or edn")))))
 
 (deftest complexity-rules-test
   (testing "complexity analysis counts control-flow forms and ignores data"
