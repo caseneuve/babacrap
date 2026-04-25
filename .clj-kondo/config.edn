@@ -1,0 +1,2 @@
+{:config-paths ["../resources/clj-kondo.exports/pk/babacrap"]
+ :linters {:babacrap/cyclomatic-complexity {:level :warning :max 20}}}

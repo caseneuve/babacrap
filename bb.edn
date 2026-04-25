@@ -1,0 +1,19 @@
+{:paths ["src" "resources" "test/fixtures/src" "test/fixtures/test"]
+ :deps {cloverage/cloverage
+        {:git/url "https://github.com/cloverage/cloverage.git"
+         :git/sha "61e3cac426e9907a9dd01c37597f85c71a57ff90"
+         :deps/root "cloverage"}
+        org.clojure/tools.cli {:mvn/version "1.1.230"}
+        rewrite-clj/rewrite-clj {:mvn/version "1.1.49"}}
+ :tasks
+ {test
+  {:doc "Run tests"
+   :task (shell "bb test_runner.clj")}
+
+  lint
+  {:doc "Lint this project and the sample corpus"
+   :task (shell "clj-kondo --lint src resources test bb.edn test_runner.clj --cache false")}
+
+  crap
+  {:doc "Run CRAP analysis"
+   :task (apply shell "bb" "-m" "babacrap.core" *command-line-args*)}}}
