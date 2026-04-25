@@ -3,6 +3,7 @@
   (:require [babacrap.complexity :as complexity]
             [babashka.fs :as fs]
             [babashka.process :as process]
+            [clojure.java.io :as io]
             [clojure.pprint :as pprint]
             [clojure.string :as str]
             [clojure.tools.cli :as cli]
@@ -33,6 +34,8 @@
     :parse-fn keyword
     :validate [#{:text :edn} "Must be text or edn"]
     :default (:format default-options)]
+   [nil "--force" "Run even if mutation target files have uncommitted changes"
+    :default false]
    ["-h" "--help"]])
 
 
@@ -192,6 +195,23 @@
         (process/destroy-tree proc)
         (assoc @proc :timeout? true :exit ::timeout)))))
 
+(defn file-dirty? [filename]
+  ;; True when git reports uncommitted changes for `filename` (tracked diff
+  ;; or untracked). false when git is unavailable or the file isn't in a
+  ;; repo — in both cases there is no worktree we can corrupt, so the
+  ;; caller should proceed.
+  (let [file (io/file filename)
+        dir (or (.getParentFile (.getAbsoluteFile file)) (io/file "."))
+        {:keys [exit out]}
+        (process/sh {:dir (str dir)
+                     :out :string :err :string :continue true}
+                    "git" "status" "--porcelain" "--" (.getName file))]
+    (and (zero? exit)
+         (boolean (seq (str/trim (or out "")))))))
+
+(defn dirty-targets [filenames]
+  (vec (filter file-dirty? filenames)))
+
 (defn run-test-command [{:keys [test-command timeout-ms]}]
   (let [proc (process/process {:out :string
                                :err :string
@@ -288,12 +308,25 @@
           2)
 
       :else
-      (let [results (run-mutation-analysis options)
-            summary (summarize results)]
-        (case (:format options)
-          :edn (pprint/pprint {:summary summary :results results})
-          :text (print-text results))
-        (if (pos? (:survived summary)) 1 0)))))
+      (do
+        ;; Restore any leftover backups before parsing, so a SIGKILLed prior
+        ;; run does not feed a half-mutated file into `collect-mutants`.
+        (restore-backups! (:src-paths options))
+        (let [targets (distinct (map :filename (collect-mutants (:src-paths options))))
+              dirty (when-not (:force options) (dirty-targets targets))]
+          (if (seq dirty)
+            (do (binding [*out* *err*]
+                  (println "Mutation targets have uncommitted changes:")
+                  (doseq [f dirty] (println (str "  " f)))
+                  (println)
+                  (println "Commit or stash them, or re-run with --force."))
+                3)
+            (let [results (run-mutation-analysis options)
+                  summary (summarize results)]
+              (case (:format options)
+                :edn (pprint/pprint {:summary summary :results results})
+                :text (print-text results))
+              (if (pos? (:survived summary)) 1 0))))))))
 
 (defn -main [& args]
   (let [exit-code (run args)]

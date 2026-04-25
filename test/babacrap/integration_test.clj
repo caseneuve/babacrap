@@ -122,3 +122,83 @@
                                     "--timeout-ms" "5000"
                                     "--format" "edn"])))
       (is (= 1 @exit)))))
+
+(defn git [dir & args]
+  (apply p/shell {:dir (str dir) :out :string :err :string :continue true}
+         "git" args))
+
+(defn init-repo! [dir]
+  (git dir "init" "-q" "-b" "main")
+  (git dir "config" "user.email" "test@example.com")
+  (git dir "config" "user.name" "test")
+  (git dir "commit" "-q" "--allow-empty" "-m" "init"))
+
+(deftest dirty-targets-test
+  (testing "dirty-targets reports only the files with uncommitted changes"
+    (let [dir (fs/create-temp-dir {:prefix "babacrap-dirty"})]
+      (try
+        (init-repo! dir)
+        (let [tracked (str (fs/path dir "a.clj"))
+              untouched (str (fs/path dir "b.clj"))]
+          (spit tracked "(ns a)\n")
+          (spit untouched "(ns b)\n")
+          (git dir "add" "a.clj" "b.clj")
+          (git dir "commit" "-q" "-m" "seed")
+          (spit tracked "(ns a)\n;; dirty\n")
+          (is (= #{tracked} (set (mutation/dirty-targets [tracked untouched]))))
+          (is (empty? (mutation/dirty-targets [untouched]))))
+        (finally (fs/delete-tree dir)))))
+  (testing "dirty-targets returns empty outside a git repo"
+    (let [dir (fs/create-temp-dir {:prefix "babacrap-nogit"})]
+      (try
+        (let [f (str (fs/path dir "a.clj"))]
+          (spit f "(ns a)\n")
+          (is (empty? (mutation/dirty-targets [f]))))
+        (finally (fs/delete-tree dir))))))
+
+(deftest mutation-run-restores-backups-before-collection-test
+  (testing "CLI restores leftover backups before collecting mutants"
+    (let [dir (fs/create-temp-dir {:prefix "babacrap-leftover"})]
+      (try
+        (let [src (str (fs/path dir "demo.clj"))
+              backup (str src mutation/backup-suffix)
+              original "(ns demo)\n(defn f [x] (if x :y :n))\n"
+              mutated "(ns demo)\n((((\n"]
+          (spit src mutated)
+          (spit backup original)
+          (with-out-str
+            (mutation/run ["--src" src
+                           "--test-command" "true"
+                           "--force"
+                           "--format" "edn"]))
+          (is (= original (slurp src)))
+          (is (not (fs/exists? backup))))
+        (finally (fs/delete-tree dir))))))
+
+(deftest mutation-refuses-dirty-targets-test
+  (testing "mutation CLI exits 3 and does not run when targets are dirty"
+    (let [invoked? (atom false)
+          exit (atom nil)]
+      (with-redefs [mutation/collect-mutants (fn [_] [{:filename "src/foo.clj"}])
+                    mutation/dirty-targets (fn [_] ["src/foo.clj"])
+                    mutation/run-mutation-analysis
+                    (fn [_] (reset! invoked? true) [])]
+        (binding [*err* (java.io.StringWriter.)]
+          (with-out-str
+            (reset! exit (mutation/run ["--src" "src/foo.clj"
+                                        "--test-command" "true"])))))
+      (is (= 3 @exit))
+      (is (false? @invoked?))))
+  (testing "--force overrides the dirty-targets refusal"
+    (let [invoked? (atom false)
+          exit (atom nil)]
+      (with-redefs [mutation/collect-mutants (fn [_] [{:filename "src/foo.clj"}])
+                    mutation/dirty-targets (fn [_] ["src/foo.clj"])
+                    mutation/run-mutation-analysis
+                    (fn [_] (reset! invoked? true) [])]
+        (with-out-str
+          (reset! exit (mutation/run ["--src" "src/foo.clj"
+                                      "--test-command" "true"
+                                      "--force"]))))
+      (is (true? @invoked?))
+      (is (zero? @exit)))))
