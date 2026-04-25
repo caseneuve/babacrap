@@ -75,6 +75,16 @@
                                     "--crap-threshold" "999"])))
       (is (zero? @exit)))))
 
+(deftest complexity-rules-test
+  (testing "complexity analysis counts control-flow forms and ignores data"
+    (is (zero? (complexity/complexity* (parser/parse-string "'(if x y z)"))))
+    (is (= 1 (complexity/complexity* (parser/parse-string "(if x y z)"))))
+    (is (= 2 (complexity/complexity* (parser/parse-string "(cond a 1 b 2 :else 3)"))))
+    (is (= 2 (complexity/complexity* (parser/parse-string "(and a b c)"))))
+    (is (= 1 (complexity/complexity* (parser/parse-string "(try a (catch Exception e b) (finally c))"))))
+    (is (= 3 (complexity/complexity* (parser/parse-string "(for [x xs :when p :while q] x)"))))
+    (is (zero? (complexity/complexity* (parser/parse-string "(fn [x] (if x 1 2))"))))))
+
 (deftest coverage-helper-test
   (testing "coverage file matching requires a path boundary"
     (is (coverage/file-matches? "demo/core.clj" "demo/core.clj" "test/fixtures/src/demo/core.clj"))

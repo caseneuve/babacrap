@@ -51,83 +51,104 @@
                         (kw-node? % :while))
                    (children binding-vec)))))
 
+(def branch-symbols
+  '#{if if-not if-let if-some when when-not when-let when-some})
+
+(def conditional-threading-symbols '#{cond-> cond->>})
+
+(def case-like-symbols '#{condp case})
+
+(def boolean-symbols '#{and or})
+
+(def comprehension-symbols '#{for doseq})
+
+(def nested-function-symbols '#{fn fn* defn defn- defmacro})
+
+(def container-tags #{:vector :map :set})
+
+(defn non-else-tests [nodes]
+  (remove #(kw-node? % :else) (pair-tests nodes)))
+
+(defn cond-complexity [args]
+  (+ (count (non-else-tests args))
+     (complexity-of-children args)))
+
+(defn conditional-threading-complexity [[expr & clauses]]
+  (+ (count (non-else-tests clauses))
+     (complexity* expr)
+     (complexity-of-children clauses)))
+
+(defn case-like-complexity [[expr & clauses]]
+  (+ (count-case-tests clauses)
+     (complexity* expr)
+     (complexity-of-children clauses)))
+
+(defn boolean-complexity [args]
+  (+ (max 0 (dec (count args)))
+     (complexity-of-children args)))
+
+(defn try-complexity [args]
+  (+ (count (filter #(= 'catch (call-sym %)) args))
+     (complexity-of-children args)))
+
+(defn comprehension-complexity [[bindings & body]]
+  (+ 1
+     (binding-filter-complexity bindings)
+     (complexity-of-children body)))
+
+(defn letfn-complexity [[_bindings & body]]
+  (complexity-of-children body))
+
+(defn list-complexity [node]
+  (let [[op & args] (children node)
+        sym (token-value op)]
+    (cond
+      (contains? branch-symbols sym)
+      (+ 1 (complexity-of-children args))
+
+      (= 'cond sym)
+      (cond-complexity args)
+
+      (contains? conditional-threading-symbols sym)
+      (conditional-threading-complexity args)
+
+      (contains? case-like-symbols sym)
+      (case-like-complexity args)
+
+      (contains? boolean-symbols sym)
+      (boolean-complexity args)
+
+      (= 'try sym)
+      (try-complexity args)
+
+      (contains? comprehension-symbols sym)
+      (comprehension-complexity args)
+
+      ;; Do not charge an outer function for nested function bodies.
+      (contains? nested-function-symbols sym)
+      0
+
+      ;; Skip local function bodies but still count the letfn body.
+      (= 'letfn sym)
+      (letfn-complexity args)
+
+      :else
+      (complexity-of-children args))))
+
 (defn complexity* [node]
   (cond
-    (nil? node)
-    0
+    (nil? node) 0
 
     ;; Quoted code is data, not runtime control flow.
-    (= :quote (n/tag node))
-    0
+    (= :quote (n/tag node)) 0
 
     (= :list (n/tag node))
-    (let [[op & args] (children node)
-          sym (token-value op)]
-      (case sym
-        ;; Branching forms.
-        (if if-not if-let if-some when when-not when-let when-some)
-        (+ 1 (complexity-of-children args))
+    (list-complexity node)
 
-        cond
-        (let [tests (remove #(kw-node? % :else)
-                            (pair-tests args))]
-          (+ (count tests)
-             (complexity-of-children args)))
-
-        (cond-> cond->>)
-        (let [[expr & clauses] args
-              tests (remove #(kw-node? % :else)
-                            (pair-tests clauses))]
-          (+ (count tests)
-             (complexity* expr)
-             (complexity-of-children clauses)))
-
-        condp
-        (let [[expr & clauses] args]
-          (+ (count-case-tests clauses)
-             (complexity* expr)
-             (complexity-of-children clauses)))
-
-        case
-        (let [[expr & clauses] args]
-          (+ (count-case-tests clauses)
-             (complexity* expr)
-             (complexity-of-children clauses)))
-
-        ;; Short-circuit boolean operators add paths.
-        (and or)
-        (+ (max 0 (dec (count args)))
-           (complexity-of-children args))
-
-        ;; Each catch adds a path. finally does not.
-        try
-        (+ (count (filter #(= 'catch (call-sym %)) args))
-           (complexity-of-children args))
-
-        ;; Sequence comprehensions / loops.
-        (for doseq)
-        (let [[bindings & body] args]
-          (+ 1
-             (binding-filter-complexity bindings)
-             (complexity-of-children body)))
-
-        ;; Do not charge an outer function for nested function bodies.
-        (fn fn* defn defn- defmacro)
-        0
-
-        ;; Skip local function bodies but still count the letfn body.
-        letfn
-        (let [[_bindings & body] args]
-          (complexity-of-children body))
-
-        ;; Default: recurse.
-        (complexity-of-children args)))
-
-    (contains? #{:vector :map :set} (n/tag node))
+    (contains? container-tags (n/tag node))
     (complexity-of-children (children node))
 
-    :else
-    0))
+    :else 0))
 
 (defn option-node? [node]
   ;; defn-like optional docstring and attr-map before arities.
