@@ -56,7 +56,7 @@ Note: Cloverage babashka support is in the git checkout tested during this work.
 - `src/babacrap/coverage.clj` — Cloverage invocation and raw stats parsing/join helpers.
 - `src/babacrap/core.clj` — CRAP CLI, CRAP formula, output, threshold handling.
 - `src/babacrap/mutation.clj` — mutation discovery, in-place mutant application/restoration, test command execution.
-- `resources/clj-kondo.exports/pk/babacrap/` — clj-kondo config export and hook namespace.
+- `resources/clj-kondo.exports/io.github.caseneuve/babacrap/` — clj-kondo config export and hook namespace.
 - `test_runner.clj` — lightweight integration test runner.
 - `test/corpus/` — clj-kondo hook test corpus.
 - `test/fixtures/` — small namespaced project for end-to-end CRAP tests.
@@ -98,7 +98,7 @@ bb mutate --src src --test-command 'bb -cp src:resources:test:test/fixtures/src:
 ## Development notes
 
 - Keep the clj-kondo hook and CLI complexity behavior aligned when changing complexity rules; `babacrap.integration-test/hook-cli-parity-test` should catch drift on the fixture corpus.
-- The clj-kondo hook runs in SCI and cannot depend on arbitrary project source. Keep hook code self-contained under `resources/clj-kondo.exports/pk/babacrap`.
+- The clj-kondo hook runs in SCI and cannot depend on arbitrary project source. Keep hook code self-contained under `resources/clj-kondo.exports/io.github.caseneuve/babacrap`.
 - The CLI currently targets normal namespaced `.clj` / `.cljc` / `.bb` files under source paths. Bare scripts without an `ns` form are not first-class yet.
 - Cloverage `raw-stats.clj` is Clojure data printed with `clojure.pprint`, not strict EDN. It can include reader literals such as regexes, so `babacrap.coverage/read-raw-stats` intentionally uses the Clojure reader with `*read-eval* false`.
 - Generated output belongs under `target/` and should not be committed.

@@ -1,0 +1,11 @@
+{:linters
+ {:babacrap/cyclomatic-complexity
+  {:level :warning
+   ;; Cyclomatic complexity starts at 1 and adds one for each decision point.
+   :max 10}}
+
+ :hooks
+ {:analyze-call
+  {clojure.core/defn     io.github.caseneuve.babacrap/defn-like
+   clojure.core/defn-    io.github.caseneuve.babacrap/defn-like
+   clojure.core/defmacro io.github.caseneuve.babacrap/defn-like}}}

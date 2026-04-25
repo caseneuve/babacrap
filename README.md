@@ -1,6 +1,6 @@
 # babacrap
 
-CRAP analysis for babashka/Clojure projects.
+Simple CRAP and mutation analysis for babashka/Clojure projects.
 
 Babacrap currently has three pieces:
 
@@ -35,13 +35,16 @@ bodies are not charged to the outer function.
 
 This is intentionally a practical lint metric, not a full control-flow graph.
 
-## Use the CRAP CLI from another babashka project
+## Use from another babashka project
 
-Add babacrap as a dependency in the target project's `bb.edn`:
+Add babacrap as a GitHub dependency in the target project's `bb.edn`:
 
 ```clojure
 {:paths ["src" "test"]
- :deps {babacrap/babacrap {:local/root "../babacrap"}}
+ :deps {io.github.caseneuve/babacrap
+        {:git/tag "2026-04-25-alpha.1"
+         ;; Replace <sha> with the commit SHA for the tag above.
+         :git/sha "<sha>"}}
  :tasks
  {crap
   {:doc "Run CRAP analysis"
@@ -53,15 +56,31 @@ Add babacrap as a dependency in the target project's `bb.edn`:
           "--ns-regex" "my.project.*"
           "--test-ns-regex" ".*-test"
           "--output" "target/babacrap/coverage"
+          *command-line-args*)}
+
+  mutate
+  {:doc "Run mutation analysis"
+   :task
+   (apply shell
+          "bb" "-m" "babacrap.mutation"
+          "--src" "src"
+          "--test-command" "bb test"
           *command-line-args*)}}}
 ```
 
 Replace `my.project.*` with the namespaces you want to measure.
 
+For local babacrap development, use a local dependency instead:
+
+```clojure
+{:deps {babacrap/babacrap {:local/root "../babacrap"}}}
+```
+
 Run:
 
 ```sh
 bb crap
+bb mutate
 ```
 
 Example output:
@@ -101,26 +120,6 @@ only in `bb.edn` tasks.
 
 ## Run mutation analysis
 
-Add a task next to your `crap` task:
-
-```clojure
-{:tasks
- {mutate
-  {:doc "Run mutation analysis"
-   :task
-   (apply shell
-          "bb" "-m" "babacrap.mutation"
-          "--src" "src"
-          "--test-command" "bb test"
-          *command-line-args*)}}}
-```
-
-Run:
-
-```sh
-bb mutate
-```
-
 Useful options:
 
 ```sh
@@ -146,14 +145,26 @@ Current mutators include:
 
 ## Use only the clj-kondo complexity linter
 
-From a target project, add this to `.clj-kondo/config.edn`:
+After adding babacrap as a dependency, copy exported clj-kondo configs:
+
+```sh
+clj-kondo --lint "$(bb print-deps --format classpath)" --copy-configs --skip-lint
+```
+
+Then enable the copied config in `.clj-kondo/config.edn`:
 
 ```clojure
-{:config-paths ["../babacrap/resources/clj-kondo.exports/pk/babacrap"]
+{:config-paths ["imports/io.github.caseneuve/babacrap"]
  :linters
  {:babacrap/cyclomatic-complexity
   {:level :warning
    :max 8}}}
+```
+
+For local development without copying configs, point directly at the checkout:
+
+```clojure
+{:config-paths ["../babacrap/resources/clj-kondo.exports/io.github.caseneuve/babacrap"]}
 ```
 
 Run clj-kondo normally:
@@ -168,10 +179,10 @@ If you have a macro with defn-like syntax, register it directly for the
 clj-kondo hook:
 
 ```clojure
-{:config-paths ["../babacrap/resources/clj-kondo.exports/pk/babacrap"]
+{:config-paths ["imports/io.github.caseneuve/babacrap"]
  :hooks
  {:analyze-call
-  {my.app/defhandler pk.babacrap/defn-like}}
+  {my.app/defhandler io.github.caseneuve.babacrap/defn-like}}
  :linters
  {:babacrap/cyclomatic-complexity {:level :warning :max 8}}}
 ```

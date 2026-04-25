@@ -1,10 +1,6 @@
 ---
 name: mutate
-triggers:
-  - bb mutate
-  - mutation analysis
-  - run mutation
-  - mutate
+description: Safely run babacrap mutation analysis, including target cleanliness checks, backup restoration, execution, and post-run verification. Use when asked to run bb mutate, mutation analysis, or mutant testing.
 ---
 
 # `mutate` — Safe Mutation Analysis

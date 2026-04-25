@@ -1,4 +1,4 @@
-(ns pk.babacrap
+(ns io.github.caseneuve.babacrap
   (:require [clj-kondo.hooks-api :as api]))
 
 (def linter :babacrap/cyclomatic-complexity)
