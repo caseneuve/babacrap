@@ -1,4 +1,4 @@
-{:paths ["src" "resources" "test/fixtures/src" "test/fixtures/test"]
+{:paths ["src" "resources" "test" "test/fixtures/src" "test/fixtures/test"]
  :deps {cloverage/cloverage
         {:git/url "https://github.com/cloverage/cloverage.git"
          :git/sha "61e3cac426e9907a9dd01c37597f85c71a57ff90"
@@ -16,4 +16,8 @@
 
   crap
   {:doc "Run CRAP analysis"
-   :task (apply shell "bb" "-m" "babacrap.core" *command-line-args*)}}}
+   :task (apply shell "bb" "-m" "babacrap.core" *command-line-args*)}
+
+  mutate
+  {:doc "Run mutation analysis"
+   :task (apply shell "bb" "-m" "babacrap.mutation" *command-line-args*)}}}

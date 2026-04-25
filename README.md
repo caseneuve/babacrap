@@ -2,13 +2,12 @@
 
 CRAP analysis for babashka/Clojure projects.
 
-Babacrap currently has two pieces:
+Babacrap currently has three pieces:
 
 1. a clj-kondo config export for editor/CI cyclomatic-complexity warnings;
 2. a babashka CLI that runs Cloverage, combines coverage with complexity, and
-   prints CRAP scores.
-
-Mutation testing is planned as a later layer.
+   prints CRAP scores;
+3. a simple babashka-native mutation runner.
 
 ## CRAP score
 
@@ -100,6 +99,50 @@ test/my/project/foo_test.clj
 It is not yet aimed at bare `.bb` scripts without `ns` forms or code embedded
 only in `bb.edn` tasks.
 
+## Run mutation analysis
+
+Add a task next to your `crap` task:
+
+```clojure
+{:tasks
+ {mutate
+  {:doc "Run mutation analysis"
+   :task
+   (apply shell
+          "bb" "-m" "babacrap.mutation"
+          "--src" "src"
+          "--test-command" "bb test"
+          *command-line-args*)}}}
+```
+
+Run:
+
+```sh
+bb mutate
+```
+
+Useful options:
+
+```sh
+bb mutate --limit 20
+bb mutate --timeout-ms 20000
+bb mutate --format edn
+```
+
+The mutation runner currently mutates files in place one mutant at a time,
+runs the configured test command, and restores the original source in a
+`finally` block. Use git to verify the worktree afterwards, especially if you
+interrupt the process.
+
+Current mutators include:
+
+- boolean flips: `true` ↔ `false`;
+- comparison/operator swaps: `=` ↔ `not=`, `<` ↔ `<=`, `>` ↔ `>=`;
+- arithmetic swaps: `+` ↔ `-`, `*` ↔ `/`, `inc` ↔ `dec`;
+- logical/control swaps: `and` ↔ `or`, `if` ↔ `if-not`, `when` ↔ `when-not`;
+- condition forcing for `if`/`when` forms;
+- `(not x)` removal.
+
 ## Use only the clj-kondo complexity linter
 
 From a target project, add this to `.clj-kondo/config.edn`:
@@ -143,8 +186,14 @@ bb test
 bb lint
 ```
 
-Try the CLI against the fixture project:
+Try the CRAP CLI against the fixture project:
 
 ```sh
 bb crap --src test/fixtures/src --test test/fixtures/test --ns-regex 'demo.*' --test-ns-regex '.*-test' --crap-threshold 999
+```
+
+Try mutation analysis against the fixture project:
+
+```sh
+bb mutate --src test/fixtures/src/demo/core.clj --test-command 'bb -cp test/fixtures/src:test/fixtures/test -e "(require '\''[clojure.test :as t] '\''demo.core-test) (let [r (t/run-tests '\''demo.core-test)] (System/exit (+ (:fail r) (:error r))))"'
 ```
