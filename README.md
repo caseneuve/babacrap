@@ -130,9 +130,10 @@ bb mutate --format edn
 ```
 
 The mutation runner currently mutates files in place one mutant at a time,
-runs the configured test command, and restores the original source in a
-`finally` block. Use git to verify the worktree afterwards, especially if you
-interrupt the process.
+writes sibling `*.babacrap.bak` backups, runs the configured test command, and
+restores the original source in a `finally` block. At startup it also restores
+leftover backups for the selected source paths. Use git to verify the worktree
+afterwards, especially if you interrupt the process.
 
 Current mutators include:
 

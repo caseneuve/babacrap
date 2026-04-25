@@ -1,5 +1,6 @@
 (ns babacrap.coverage
   (:require [clojure.java.io :as io]
+            [clojure.string :as str]
             [cloverage.coverage :as cloverage]))
 
 (defn cloverage-args [{:keys [src-paths test-paths ns-regex test-ns-regex output]}]
@@ -39,7 +40,8 @@
 (defn file-matches? [coverage-file complexity-resource-file complexity-filename]
   (or (= coverage-file complexity-resource-file)
       (= coverage-file complexity-filename)
-      (.endsWith ^String complexity-filename coverage-file)))
+      (and (str/includes? coverage-file "/")
+           (.endsWith ^String complexity-filename (str "/" coverage-file)))))
 
 (defn in-range? [{:keys [row end-row]} {:keys [line]}]
   (and line

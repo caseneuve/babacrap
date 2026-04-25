@@ -1,6 +1,7 @@
 (ns babacrap.mutation
   (:gen-class)
   (:require [babacrap.complexity :as complexity]
+            [babashka.fs :as fs]
             [babashka.process :as process]
             [clojure.pprint :as pprint]
             [clojure.string :as str]
@@ -34,18 +35,6 @@
     :default (:format default-options)]
    ["-h" "--help"]])
 
-(def ignored-tags
-  #{:whitespace :newline :comment :comma :uneval})
-
-(defn semantic? [node]
-  (not (contains? ignored-tags (n/tag node))))
-
-(defn children [node]
-  (filter semantic? (:children node)))
-
-(defn token-value [node]
-  (when (= :token (n/tag node))
-    (n/sexpr node)))
 
 (def token-replacements
   {'true "false"
@@ -126,33 +115,36 @@
 (declare collect*)
 
 (defn collect-token-mutants [source line-starts filename functions node]
-  (let [value (token-value node)]
+  ;; Replacement values are raw source text inserted at the token's range.
+  (let [value (complexity/token-value node)]
     (when-let [replacement (get token-replacements value)]
       [(mutation source line-starts filename functions node :replace-token replacement)])))
 
 (defn collect-not-mutants [source line-starts filename functions node]
   (when (and (= :list (n/tag node))
-             (= 'not (some-> node children first token-value)))
-    (when-let [arg (second (children node))]
+             (= 'not (some-> node complexity/children first complexity/token-value)))
+    (when-let [arg (second (complexity/children node))]
       [(mutation source line-starts filename functions node :remove-not
                  (fragment source line-starts arg))])))
 
 (defn collect-if-condition-mutants [source line-starts filename functions node]
   (when (and (= :list (n/tag node))
-             (contains? '#{if if-not when when-not} (some-> node children first token-value)))
-    (when-let [test-node (second (children node))]
+             (contains? '#{if if-not when when-not} (some-> node complexity/children first complexity/token-value)))
+    (when-let [test-node (second (complexity/children node))]
       [(mutation source line-starts filename functions test-node :force-condition "true")
        (mutation source line-starts filename functions test-node :force-condition "false")])))
 
 (defn collect* [source line-starts filename functions node]
-  (let [own-mutants (concat
-                     (when (= :token (n/tag node))
-                       (collect-token-mutants source line-starts filename functions node))
-                     (collect-not-mutants source line-starts filename functions node)
-                     (collect-if-condition-mutants source line-starts filename functions node))
-        child-mutants (mapcat #(collect* source line-starts filename functions %)
-                              (children node))]
-    (concat own-mutants child-mutants)))
+  (if (= :quote (n/tag node))
+    []
+    (let [own-mutants (concat
+                       (when (= :token (n/tag node))
+                         (collect-token-mutants source line-starts filename functions node))
+                       (collect-not-mutants source line-starts filename functions node)
+                       (collect-if-condition-mutants source line-starts filename functions node))
+          child-mutants (mapcat #(collect* source line-starts filename functions %)
+                                (complexity/children node))]
+      (concat own-mutants child-mutants))))
 
 (defn with-ids [mutants]
   (map-indexed (fn [idx m] (assoc m :id (inc idx))) mutants))
@@ -171,6 +163,21 @@
        (mapcat collect-file-mutants)
        with-ids
        vec))
+
+(def backup-suffix ".babacrap.bak")
+
+(defn backup-path [filename]
+  (str filename backup-suffix))
+
+(defn restore-backup! [filename]
+  (let [backup (backup-path filename)]
+    (when (fs/exists? backup)
+      (spit filename (slurp backup))
+      (fs/delete-if-exists backup))))
+
+(defn restore-backups! [src-paths]
+  (doseq [filename (complexity/source-files src-paths)]
+    (restore-backup! filename)))
 
 (defn apply-mutant [source {:keys [start end replacement]}]
   (str (subs source 0 start)
@@ -194,9 +201,11 @@
 
 (defn run-mutant! [opts mutant]
   (let [filename (:filename mutant)
+        backup (backup-path filename)
         original-source (slurp filename)
         mutated-source (apply-mutant original-source mutant)]
     (try
+      (spit backup original-source)
       (spit filename mutated-source)
       (let [{:keys [exit timeout? out err]} (run-test-command opts)
             status (cond
@@ -209,9 +218,11 @@
                :out out
                :err err))
       (finally
-        (spit filename original-source)))))
+        (spit filename original-source)
+        (fs/delete-if-exists backup)))))
 
 (defn run-mutation-analysis [opts]
+  (restore-backups! (:src-paths opts))
   (let [mutants (cond->> (collect-mutants (:src-paths opts))
                   (:limit opts) (take (:limit opts)))]
     (vec (map #(run-mutant! opts %) mutants))))
@@ -247,8 +258,7 @@
 
 (defn merge-defaults [opts]
   (merge default-options
-         (cond-> opts
-           (empty? (:src-paths opts)) (dissoc :src-paths))))
+         (into {} (remove (fn [[_ v]] (= [] v)) opts))))
 
 (defn usage [summary]
   (str/join

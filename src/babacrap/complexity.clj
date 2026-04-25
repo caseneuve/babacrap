@@ -25,6 +25,7 @@
 
 (defn kw-node? [node kw]
   (and (= :token (n/tag node))
+       (keyword? (n/sexpr node))
        (= kw (n/sexpr node))))
 
 (defn pair-tests [nodes]
@@ -46,9 +47,9 @@
 (defn binding-filter-complexity [binding-vec]
   (if-not (= :vector (n/tag binding-vec))
     0
-    (count
-     (filter #(contains? #{:when :while} (n/sexpr %))
-             (filter #(= :token (n/tag %)) (children binding-vec))))))
+    (count (filter #(or (kw-node? % :when)
+                        (kw-node? % :while))
+                   (children binding-vec)))))
 
 (defn complexity* [node]
   (cond
@@ -132,6 +133,9 @@
   ;; defn-like optional docstring and attr-map before arities.
   (contains? #{:string :map} (n/tag node)))
 
+(defn metadata-node? [node]
+  (contains? #{:meta :reader-macro} (n/tag node)))
+
 (defn arities [defn-node]
   (let [[_defn name-node & more] (children defn-node)
         more (drop-while option-node? more)]
@@ -164,7 +168,11 @@
   (some (fn [form]
           (when (and (= :list (n/tag form))
                      (= 'ns (some-> form children first token-value)))
-            (some-> form children second n/sexpr)))
+            (some->> (children form)
+                     rest
+                     (drop-while metadata-node?)
+                     first
+                     n/sexpr)))
         (children forms-node)))
 
 (defn namespace->resource-path [ns-sym filename]
@@ -188,7 +196,8 @@
                    (.isDirectory f) (file-seq f)
                    :else [f])))
        (filter source-file?)
-       (map #(.getPath ^java.io.File %))))
+       (map #(.getPath ^java.io.File %))
+       sort))
 
 (defn analyze-file [filename]
   (let [forms-node (p/parse-file-all filename)

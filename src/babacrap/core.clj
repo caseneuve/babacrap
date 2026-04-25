@@ -45,11 +45,7 @@
 
 (defn merge-defaults [opts]
   (merge default-options
-         (cond-> opts
-           (empty? (:src-paths opts)) (dissoc :src-paths)
-           (empty? (:test-paths opts)) (dissoc :test-paths)
-           (empty? (:ns-regex opts)) (dissoc :ns-regex)
-           (empty? (:test-ns-regex opts)) (dissoc :test-ns-regex))))
+         (into {} (remove (fn [[_ v]] (= [] v)) opts))))
 
 (defn crap-score [complexity coverage]
   ;; CRAP(m) = comp(m)^2 * (1 - cov(m))^3 + comp(m)

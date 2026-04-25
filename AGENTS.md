@@ -97,12 +97,12 @@ bb mutate --src src --test-command 'bb -cp src:resources:test:test/fixtures/src:
 
 ## Development notes
 
-- Keep the clj-kondo hook and CLI complexity behavior aligned when changing complexity rules.
+- Keep the clj-kondo hook and CLI complexity behavior aligned when changing complexity rules; `babacrap.integration-test/hook-cli-parity-test` should catch drift on the fixture corpus.
 - The clj-kondo hook runs in SCI and cannot depend on arbitrary project source. Keep hook code self-contained under `resources/clj-kondo.exports/pk/babacrap`.
 - The CLI currently targets normal namespaced `.clj` / `.cljc` / `.bb` files under source paths. Bare scripts without an `ns` form are not first-class yet.
 - Cloverage `raw-stats.clj` is Clojure data printed with `clojure.pprint`, not strict EDN. It can include reader literals such as regexes, so `babacrap.coverage/read-raw-stats` intentionally uses the Clojure reader with `*read-eval* false`.
 - Generated output belongs under `target/` and should not be committed.
-- Mutation currently mutates files in place one mutant at a time, then restores them in `finally`. Always verify `git status` after mutation runs. A future improvement could run mutants in a copied temp project using `babashka.fs/copy-tree` with excludes.
+- Mutation currently mutates files in place one mutant at a time, writes sibling `*.babacrap.bak` backups, then restores them in `finally`. Startup also restores leftover backups for the selected source paths. Always verify `git status` after mutation runs. A future improvement could run mutants in a copied temp project using `babashka.fs/copy-tree` with excludes.
 
 ## Commit message style
 

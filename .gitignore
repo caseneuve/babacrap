@@ -2,3 +2,4 @@
 .cache/
 .lsp/
 target/
+*.babacrap.bak
