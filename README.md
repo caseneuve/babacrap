@@ -20,6 +20,43 @@ CRAP(m) = complexity(m)^2 * (1 - coverage(m))^3 + complexity(m)
 `coverage` is a ratio from `0.0` to `1.0`. Complexity starts at `1` and adds
 one for each decision point.
 
+### How to read CRAP scores
+
+CRAP is a change-risk indicator for one function. It is not a complete code
+quality score. It does not judge names, architecture, duplication, performance,
+or whether tests assert meaningful behavior. It asks a narrower question:
+
+> Is this function complex enough, and uncovered enough, that changing it is
+> risky?
+
+A complex function can be fine when it is well tested. A poorly covered function
+can be fine when it is trivial. CRAP gets high when complexity and missing
+coverage appear together.
+
+Rules of thumb:
+
+| CRAP score | Interpretation |
+|---:|---|
+| `1–10` | Usually fine |
+| `10–20` | Worth a look |
+| `20–30` | Risky; add tests or simplify |
+| `>30` | CRAPpy; treat as a quality gate failure |
+| `>50` | Strong warning |
+| `>100` | Dangerous hotspot |
+
+Examples:
+
+| Complexity | Coverage | CRAP | Meaning |
+|---:|---:|---:|---|
+| `1` | `0%` | `2` | Trivial and untested; usually low risk |
+| `10` | `100%` | `10` | Complex but covered |
+| `10` | `50%` | `22.5` | Risky; tests or refactoring needed |
+| `10` | `0%` | `110` | High-risk hotspot |
+
+When a score is high, improve it by adding tests for uncovered branches,
+reducing cyclomatic complexity, or both. Babacrap's default examples use a
+threshold of `30`, which is a common practical gate for CRAP analysis.
+
 ## What complexity counts
 
 - `if`, `if-not`, `if-let`, `if-some`
