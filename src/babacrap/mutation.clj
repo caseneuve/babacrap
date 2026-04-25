@@ -3,13 +3,11 @@
   (:require [babacrap.complexity :as complexity]
             [babashka.fs :as fs]
             [babashka.process :as process]
-            [clojure.java.io :as io]
             [clojure.pprint :as pprint]
             [clojure.string :as str]
             [clojure.tools.cli :as cli]
             [rewrite-clj.node :as n]
-            [rewrite-clj.parser :as p])
-  (:import [java.util.concurrent TimeUnit]))
+            [rewrite-clj.parser :as p]))
 
 (def default-options
   {:src-paths ["src"]
@@ -187,25 +185,27 @@
        replacement
        (subs source end)))
 
+(def timeout-marker ::timeout)
+
 (defn wait-for-process [proc timeout-ms]
-  (let [^Process p (:proc proc)]
-    (if (.waitFor p timeout-ms TimeUnit/MILLISECONDS)
-      @proc
+  (let [result (deref proc timeout-ms timeout-marker)]
+    (if (= timeout-marker result)
       (do
         (process/destroy-tree proc)
-        (assoc @proc :timeout? true :exit ::timeout)))))
+        (assoc @proc :timeout? true :exit timeout-marker))
+      result)))
 
 (defn file-dirty? [filename]
   ;; True when git reports uncommitted changes for `filename` (tracked diff
   ;; or untracked). false when git is unavailable or the file isn't in a
   ;; repo — in both cases there is no worktree we can corrupt, so the
   ;; caller should proceed.
-  (let [file (io/file filename)
-        dir (or (.getParentFile (.getAbsoluteFile file)) (io/file "."))
+  (let [path (fs/absolutize filename)
+        dir (or (fs/parent path) (fs/path "."))
         {:keys [exit out]}
         (process/sh {:dir (str dir)
                      :out :string :err :string :continue true}
-                    "git" "status" "--porcelain" "--" (.getName file))]
+                    "git" "status" "--porcelain" "--" (str (fs/file-name path)))]
     (and (zero? exit)
          (boolean (seq (str/trim (or out "")))))))
 
@@ -264,17 +264,22 @@
 (defn format-function [{:keys [var]}]
   (or (some-> var str) "<unknown>"))
 
-(defn print-text [results]
+(defn format-text [results]
   (let [{:keys [total killed survived timeout mutation-score]} (summarize results)]
-    (println "Mutation analysis")
-    (println "-----------------")
-    (println (format "mutants: %s, killed: %s, survived: %s, timeout: %s, score: %.1f%%"
-                     total killed survived timeout mutation-score))
-    (when (seq results)
-      (println)
-      (doseq [{:keys [id filename row col mutator original replacement status function]} results]
-        (println (format "#%s %s %s:%s:%s %s" id (name status) filename row col (format-function function)))
-        (println (format "  %s: %s => %s" (name mutator) (pr-str original) (pr-str replacement)))))))
+    (str/join
+     \newline
+     (concat
+      ["Mutation analysis"
+       "-----------------"
+       (format "mutants: %s, killed: %s, survived: %s, timeout: %s, score: %.1f%%"
+               total killed survived timeout mutation-score)]
+      (when (seq results)
+        (concat
+         [""]
+         (mapcat (fn [{:keys [id filename row col mutator original replacement status function]}]
+                   [(format "#%s %s %s:%s:%s %s" id (name status) filename row col (format-function function))
+                    (format "  %s: %s => %s" (name mutator) (pr-str original) (pr-str replacement))])
+                 results)))))))
 
 (defn merge-defaults [opts]
   (merge default-options
@@ -293,19 +298,39 @@
     "Options:"
     summary]))
 
-(defn run [args]
+(defn error-text [errors summary]
+  (str/join \newline (concat errors ["" (usage summary)])))
+
+(defn dirty-targets-text [dirty]
+  (str/join
+   \newline
+   (concat ["Mutation targets have uncommitted changes:"]
+           (map #(str "  " %) dirty)
+           ["" "Commit or stash them, or re-run with --force."])))
+
+(defn render-edn [x]
+  (str/trimr (with-out-str (pprint/pprint x))))
+
+(defn render-report [results format]
+  (let [summary (summarize results)]
+    (case format
+      :edn (render-edn {:summary summary :results results})
+      :text (format-text results))))
+
+(defn mutation-exit-code [results]
+  (if (pos? (:survived (summarize results))) 1 0))
+
+(defn run-result [args]
   (let [{:keys [options errors summary]} (cli/parse-opts args cli-options)
         options (merge-defaults options)]
     (cond
       (:help options)
-      (do (println (usage summary)) 0)
+      {:exit 0
+       :out (usage summary)}
 
       (seq errors)
-      (do (binding [*out* *err*]
-            (doseq [e errors] (println e))
-            (println)
-            (println (usage summary)))
-          2)
+      {:exit 2
+       :err (error-text errors summary)}
 
       :else
       (do
@@ -315,18 +340,23 @@
         (let [targets (distinct (map :filename (collect-mutants (:src-paths options))))
               dirty (when-not (:force options) (dirty-targets targets))]
           (if (seq dirty)
-            (do (binding [*out* *err*]
-                  (println "Mutation targets have uncommitted changes:")
-                  (doseq [f dirty] (println (str "  " f)))
-                  (println)
-                  (println "Commit or stash them, or re-run with --force."))
-                3)
-            (let [results (run-mutation-analysis options)
-                  summary (summarize results)]
-              (case (:format options)
-                :edn (pprint/pprint {:summary summary :results results})
-                :text (print-text results))
-              (if (pos? (:survived summary)) 1 0))))))))
+            {:exit 3
+             :err (dirty-targets-text dirty)}
+            (let [results (run-mutation-analysis options)]
+              {:exit (mutation-exit-code results)
+               :out (render-report results (:format options))})))))))
+
+(defn emit-result [{:keys [out err]}]
+  (when err
+    (binding [*out* *err*]
+      (println err)))
+  (when out
+    (println out)))
+
+(defn run [args]
+  (let [{:keys [exit] :as result} (run-result args)]
+    (emit-result result)
+    exit))
 
 (defn -main [& args]
   (let [exit-code (run args)]

@@ -1,5 +1,5 @@
 (ns babacrap.complexity
-  (:require [clojure.java.io :as io]
+  (:require [babashka.fs :as fs]
             [clojure.string :as str]
             [rewrite-clj.node :as n]
             [rewrite-clj.parser :as p]))
@@ -204,20 +204,24 @@
                 ".clj")]
     (str base ext)))
 
-(defn source-file? [^java.io.File f]
-  (and (.isFile f)
-       (re-find #"\.(clj|cljc|bb)$" (.getName f))))
+(def source-extensions #{"clj" "cljc" "bb"})
+
+(defn source-file? [path]
+  (and (fs/regular-file? path)
+       (contains? source-extensions (fs/extension path))))
+
+(defn expand-path [path]
+  (cond
+    (not (fs/exists? path)) []
+    (fs/directory? path) (fs/glob path "**{.clj,.cljc,.bb}")
+    :else [path]))
 
 (defn source-files [paths]
   (->> paths
-       (map io/file)
-       (mapcat (fn [^java.io.File f]
-                 (cond
-                   (not (.exists f)) []
-                   (.isDirectory f) (file-seq f)
-                   :else [f])))
+       (map fs/path)
+       (mapcat expand-path)
        (filter source-file?)
-       (map #(.getPath ^java.io.File %))
+       (map str)
        sort))
 
 (defn analyze-file [filename]

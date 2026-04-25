@@ -1,5 +1,5 @@
 (ns babacrap.coverage
-  (:require [clojure.java.io :as io]
+  (:require [babashka.fs :as fs]
             [clojure.string :as str]
             [cloverage.coverage :as cloverage]))
 
@@ -20,8 +20,8 @@
                     (apply cloverage/-main args))]
     (when-not (zero? exit-code)
       (throw (ex-info "Cloverage failed" {:exit-code exit-code
-                                           :args args})))
-    (io/file (:output opts) "raw-stats.clj")))
+                                          :args args})))
+    (str (fs/path (:output opts) "raw-stats.clj"))))
 
 (defn read-raw-stats [raw-stats-file]
   ;; Cloverage raw stats are printed with clojure.pprint, not as strict EDN.
@@ -41,7 +41,8 @@
   (or (= coverage-file complexity-resource-file)
       (= coverage-file complexity-filename)
       (and (str/includes? coverage-file "/")
-           (.endsWith ^String complexity-filename (str "/" coverage-file)))))
+           (fs/ends-with? (fs/path complexity-filename)
+                          (fs/path coverage-file)))))
 
 (defn in-range? [{:keys [row end-row]} {:keys [line]}]
   (and line

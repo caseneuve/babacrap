@@ -67,13 +67,10 @@
 
 (deftest crap-cli-run-test
   (testing "CRAP CLI run supports no-coverage mode"
-    (let [exit (atom nil)]
-      (with-out-str
-        (reset! exit (babacrap/run ["--no-coverage"
-                                    "--src" "test/fixtures/src"
-                                    "--format" "edn"
-                                    "--crap-threshold" "999"])))
-      (is (zero? @exit))))
+    (is (zero? (:exit (babacrap/run-result ["--no-coverage"
+                                            "--src" "test/fixtures/src"
+                                            "--format" "edn"
+                                            "--crap-threshold" "999"])))))
   (testing "CRAP CLI exit code follows threshold failures"
     (with-redefs [babacrap/analyze (fn [_]
                                      [{:var 'demo/f
@@ -85,26 +82,33 @@
                                        :tracked-forms 10
                                        :covered-forms 0
                                        :crap 30.1}])]
-      (let [exit (atom nil)]
-        (with-out-str
-          (reset! exit (babacrap/run ["--format" "edn" "--crap-threshold" "30"])))
-        (is (= 1 @exit)))
-      (let [exit (atom nil)]
-        (with-out-str
-          (reset! exit (babacrap/run ["--format" "edn" "--crap-threshold" "31"])))
-        (is (= 0 @exit)))))
+      (is (= 1 (:exit (babacrap/run-result ["--format" "edn" "--crap-threshold" "30"]))))
+      (is (= 0 (:exit (babacrap/run-result ["--format" "edn" "--crap-threshold" "31"]))))))
   (testing "CRAP CLI returns usage exit codes for help and invalid args"
-    (let [exit (atom nil)]
-      (with-out-str
-        (reset! exit (babacrap/run ["--help"])))
-      (is (= 0 @exit)))
-    (let [err (java.io.StringWriter.)
-          exit (atom nil)]
-      (binding [*err* err]
-        (with-out-str
-          (reset! exit (babacrap/run ["--format" "json"]))))
-      (is (= 2 @exit))
-      (is (str/includes? (str err) "Must be text or edn")))))
+    (is (= 0 (:exit (babacrap/run-result ["--help"]))))
+    (let [{:keys [exit err]} (babacrap/run-result ["--format" "json"])]
+      (is (= 2 exit))
+      (is (str/includes? err "Must be text or edn")))))
+
+(deftest core-rendering-test
+  (let [result {:var 'demo/f
+                :arity-index 0
+                :filename "src/demo.clj"
+                :row 1
+                :complexity 5
+                :coverage 0.5
+                :tracked-forms 10
+                :covered-forms 5
+                :crap 11.25}]
+    (testing "core text rendering is readable"
+      (let [out (babacrap/format-text [result])]
+        (is (str/includes? out "CRAP analysis"))
+        (is (str/includes? out "src/demo.clj:1 demo/f"))
+        (is (str/includes? out "coverage:   50.0% (5/10 forms)"))))
+    (testing "core emit-result writes to the requested stream"
+      (is (= "hello\n" (with-out-str (babacrap/emit-result {:out "hello"}))))
+      (is (= "oops\n" (with-out-str (binding [*err* *out*]
+                                        (babacrap/emit-result {:err "oops"}))))))))
 
 (deftest complexity-rules-test
   (testing "complexity analysis counts control-flow forms and ignores data"
@@ -154,15 +158,32 @@
                 (:survived mutation-summary)
                 (:timeout mutation-summary)))))))
 
+(deftest mutation-rendering-test
+  (let [result {:id 1
+                :filename "src/demo.clj"
+                :row 1
+                :col 1
+                :mutator :replace-token
+                :original "x"
+                :replacement "y"
+                :status :survived
+                :function {:var 'demo/f}}]
+    (testing "mutation text rendering is readable"
+      (let [out (mutation/format-text [result])]
+        (is (str/includes? out "Mutation analysis"))
+        (is (str/includes? out "#1 survived src/demo.clj:1:1 demo/f"))
+        (is (str/includes? out "replace-token: \"x\" => \"y\""))))
+    (testing "mutation emit-result writes to the requested stream"
+      (is (= "hello\n" (with-out-str (mutation/emit-result {:out "hello"}))))
+      (is (= "oops\n" (with-out-str (binding [*err* *out*]
+                                        (mutation/emit-result {:err "oops"}))))))))
+
 (deftest mutation-cli-run-test
   (testing "mutation CLI returns non-zero when mutants survive"
-    (let [exit (atom nil)]
-      (with-out-str
-        (reset! exit (mutation/run ["--src" "test/fixtures/src/demo/core.clj"
-                                    "--test-command" fixture-test-command
-                                    "--timeout-ms" "5000"
-                                    "--format" "edn"])))
-      (is (= 1 @exit)))))
+    (is (= 1 (:exit (mutation/run-result ["--src" "test/fixtures/src/demo/core.clj"
+                                          "--test-command" fixture-test-command
+                                          "--timeout-ms" "5000"
+                                          "--format" "edn"]))))))
 
 (defn git [dir & args]
   (apply p/shell {:dir (str dir) :out :string :err :string :continue true}
@@ -207,39 +228,41 @@
               mutated "(ns demo)\n((((\n"]
           (spit src mutated)
           (spit backup original)
-          (with-out-str
-            (mutation/run ["--src" src
-                           "--test-command" "true"
-                           "--force"
-                           "--format" "edn"]))
+          (mutation/run-result ["--src" src
+                                "--test-command" "true"
+                                "--force"
+                                "--format" "edn"])
           (is (= original (slurp src)))
           (is (not (fs/exists? backup))))
         (finally (fs/delete-tree dir))))))
 
 (deftest mutation-refuses-dirty-targets-test
   (testing "mutation CLI exits 3 and does not run when targets are dirty"
-    (let [invoked? (atom false)
-          exit (atom nil)]
-      (with-redefs [mutation/collect-mutants (fn [_] [{:filename "src/foo.clj"}])
-                    mutation/dirty-targets (fn [_] ["src/foo.clj"])
-                    mutation/run-mutation-analysis
-                    (fn [_] (reset! invoked? true) [])]
-        (binding [*err* (java.io.StringWriter.)]
-          (with-out-str
-            (reset! exit (mutation/run ["--src" "src/foo.clj"
-                                        "--test-command" "true"])))))
-      (is (= 3 @exit))
-      (is (false? @invoked?))))
+    (with-redefs [mutation/collect-mutants (fn [_] [{:filename "src/foo.clj"}])
+                  mutation/dirty-targets (fn [_] ["src/foo.clj"])
+                  mutation/run-mutation-analysis
+                  (fn [_] (throw (ex-info "should not run" {})))]
+      (let [{:keys [exit err]} (mutation/run-result ["--src" "src/foo.clj"
+                                                     "--test-command" "true"])]
+        (is (= 3 exit))
+        (is (str/includes? err "Mutation targets have uncommitted changes:")))))
   (testing "--force overrides the dirty-targets refusal"
-    (let [invoked? (atom false)
-          exit (atom nil)]
-      (with-redefs [mutation/collect-mutants (fn [_] [{:filename "src/foo.clj"}])
-                    mutation/dirty-targets (fn [_] ["src/foo.clj"])
-                    mutation/run-mutation-analysis
-                    (fn [_] (reset! invoked? true) [])]
-        (with-out-str
-          (reset! exit (mutation/run ["--src" "src/foo.clj"
-                                      "--test-command" "true"
-                                      "--force"]))))
-      (is (true? @invoked?))
-      (is (zero? @exit)))))
+    (with-redefs [mutation/collect-mutants (fn [_] [{:filename "src/foo.clj"}])
+                  mutation/dirty-targets (fn [_] ["src/foo.clj"])
+                  mutation/run-mutation-analysis
+                  (fn [_]
+                    [{:id 1
+                      :filename "src/foo.clj"
+                      :row 1
+                      :col 1
+                      :mutator :replace-token
+                      :original "x"
+                      :replacement "y"
+                      :status :survived
+                      :function {:var 'src/foo}}])]
+      (let [{:keys [exit out]} (mutation/run-result ["--src" "src/foo.clj"
+                                                     "--test-command" "true"
+                                                     "--force"
+                                                     "--format" "edn"])]
+        (is (= 1 exit))
+        (is (str/includes? out ":survived"))))))

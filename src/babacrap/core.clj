@@ -99,9 +99,6 @@
              (mapcat result-lines results))
      ["No functions found."])))
 
-(defn print-text [results]
-  (println (format-text results)))
-
 (defn over-threshold [threshold results]
   (filter #(> (:crap %) threshold) results))
 
@@ -128,28 +125,43 @@
    \newline
    (concat errors ["" (usage summary)])))
 
-(defn print-report [{:keys [results] :as report-data} format]
-  (case format
-    :edn (pprint/pprint report-data)
-    :text (print-text results)))
+(defn render-edn [x]
+  (str/trimr (with-out-str (pprint/pprint x))))
 
-(defn run [args]
+(defn render-report [{:keys [results] :as report-data} format]
+  (case format
+    :edn (render-edn report-data)
+    :text (format-text results)))
+
+(defn run-result [args]
   (let [{:keys [options errors summary]} (cli/parse-opts args cli-options)
         options (merge-defaults options)]
     (cond
       (:help options)
-      (do (println (usage summary)) 0)
+      {:exit 0
+       :out (usage summary)}
 
       (seq errors)
-      (do (binding [*out* *err*]
-            (println (error-text errors summary)))
-          2)
+      {:exit 2
+       :err (error-text errors summary)}
 
       :else
       (let [report-data (report (:crap-threshold options)
                                 (analyze options))]
-        (print-report report-data (:format options))
-        (exit-code report-data)))))
+        {:exit (exit-code report-data)
+         :out (render-report report-data (:format options))}))))
+
+(defn emit-result [{:keys [out err]}]
+  (when err
+    (binding [*out* *err*]
+      (println err)))
+  (when out
+    (println out)))
+
+(defn run [args]
+  (let [{:keys [exit] :as result} (run-result args)]
+    (emit-result result)
+    exit))
 
 (defn -main [& args]
   (let [exit-code (run args)]
