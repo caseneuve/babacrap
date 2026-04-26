@@ -70,37 +70,37 @@
 (deftest crap-edn-stdout-is-clean-test
   (testing "stdout is parseable EDN and stderr is quiet on success"
     (fs/delete-tree "target/test-edn" {:force true})
-    (let [err (java.io.StringWriter.)
-          stdout (with-out-str
-                   (binding [*err* err]
-                     (babacrap/-main "--format" "edn"
-                                     "--src" "test/fixtures/src"
-                                     "--test" "test/fixtures/test"
-                                     "--ns-regex" "demo.*"
-                                     "--test-ns-regex" ".*-test"
-                                     "--output" "target/test-edn"
-                                     "--crap-threshold" "999")))
-          parsed (edn/read-string stdout)]
+    (let [stdout-seen (volatile! nil)
+          err (util/with-captured-err
+                (vreset! stdout-seen
+                         (with-out-str
+                           (babacrap/-main "--format" "edn"
+                                           "--src" "test/fixtures/src"
+                                           "--test" "test/fixtures/test"
+                                           "--ns-regex" "demo.*"
+                                           "--test-ns-regex" ".*-test"
+                                           "--output" "target/test-edn"
+                                           "--crap-threshold" "999"))))
+          parsed (edn/read-string @stdout-seen)]
       (is (map? parsed))
       (is (contains? parsed :results))
       (is (contains? parsed :threshold))
-      (is (str/blank? (str err))
+      (is (str/blank? err)
           (str "expected stderr to be empty on success, got:\n" err)))))
 
 (deftest crap-cloverage-chatter-surfaces-on-failure-test
   (testing "captured cloverage output is forwarded to stderr when cloverage fails"
     (with-redefs [cloverage/-main
                   (fn [& _] (println "boom-chatter") 1)]
-      (let [err (java.io.StringWriter.)]
-        (binding [*err* err]
-          (try
-            (coverage/run-cloverage! {:src-paths ["src"]
-                                      :test-paths ["test"]
-                                      :ns-regex [".*"]
-                                      :test-ns-regex [".*-test"]
-                                      :output "target/test-edn"})
-            (catch Exception _ nil)))
-        (is (str/includes? (str err) "boom-chatter"))))))
+      (let [err (util/with-captured-err
+                  (try
+                    (coverage/run-cloverage! {:src-paths ["src"]
+                                              :test-paths ["test"]
+                                              :ns-regex [".*"]
+                                              :test-ns-regex [".*-test"]
+                                              :output "target/test-edn"})
+                    (catch Exception _ nil)))]
+        (is (str/includes? err "boom-chatter"))))))
 
 (deftest crap-cli-run-test
   (testing "CRAP CLI run supports no-coverage mode"
@@ -202,13 +202,12 @@
       (is (str/includes? captured "regular"))
       (is (str/includes? captured "from-test"))))
   (testing "rethrows and flushes captured buffer to *err*"
-    (let [err (java.io.StringWriter.)]
-      (binding [*err* err]
-        (try
-          (coverage/capture-out
-           (fn [] (println "before-throw") (throw (ex-info "boom" {}))))
-          (catch Exception _ nil)))
-      (is (str/includes? (str err) "before-throw")))))
+    (let [err (util/with-captured-err
+                (try
+                  (coverage/capture-out
+                   (fn [] (println "before-throw") (throw (ex-info "boom" {}))))
+                  (catch Exception _ nil)))]
+      (is (str/includes? err "before-throw")))))
 
 (deftest coverage-helper-test
   (testing "coverage file matching requires a path boundary"
@@ -258,12 +257,29 @@
       (is (= 1 (mutation/mutation-exit-code (report :survived)))))))
 
 (deftest token-replacements-shape-test
-  (testing "token-replacements maps symbols to symbols"
-    (is (every? symbol? (keys mutation/token-replacements)))
-    (is (every? symbol? (vals mutation/token-replacements))))
-  (testing "render-replacement stringifies a replacement symbol as source text"
-    (is (= "false" (mutation/render-replacement 'false)))
+  (testing "token-replacements keys match what rewrite-clj returns (booleans and symbols)"
+    (is (contains? mutation/token-replacements true))
+    (is (contains? mutation/token-replacements false))
+    (is (contains? mutation/token-replacements '=)))
+  (testing "render-replacement returns source text for a replacement value"
+    (is (= "false" (mutation/render-replacement false)))
     (is (= "not=" (mutation/render-replacement 'not=)))))
+
+(deftest boolean-mutants-are-collected-test
+  (testing "true and false are flipped as :replace-token mutants"
+    (let [source "(ns demo.b)\n(defn f [] true)\n(defn g [] false)\n"
+          forms (parser/parse-string-all source)
+          functions (complexity/analyze-forms forms "demo/b.clj")
+          mutants (mutation/collect-file-mutants-from
+                   {:filename "demo/b.clj" :source source :forms forms}
+                   functions)
+          by-original (group-by :original mutants)]
+      (is (= [{:mutator :replace-token :replacement "false"}]
+             (map #(select-keys % [:mutator :replacement])
+                  (by-original "true"))))
+      (is (= [{:mutator :replace-token :replacement "true"}]
+             (map #(select-keys % [:mutator :replacement])
+                  (by-original "false")))))))
 
 (deftest pure-file-analysis-test
   (testing "complexity/analyze-forms is pure given parsed forms + filename"

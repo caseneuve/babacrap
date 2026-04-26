@@ -123,13 +123,16 @@ bb mutate
 Example output:
 
 ```text
-CRAP analysis
--------------
-src/my/project/foo.clj:10 my.project.foo/complicated
-  complexity: 7
-  coverage:   42.9% (12/28 forms)
-  CRAP:       16.31
+CRAP analysis: FAIL — 1/3 over threshold 10.00
+  CRAP | COMPLEX |    COVERAGE | LOCATION
+-------+---------+-------------+---------------------------------------------
+ 16.31 |       7 | 42.9% (12/28) | src/my/project/foo.clj:10 my.project.foo/complicated
+  5.20 |       3 | 66.7% (4/6)   | src/my/project/foo.clj:22 my.project.foo/ok
+  2.03 |       2 | 80.0% (4/5)   | src/my/project/foo.clj:3  my.project.foo/simple
 ```
+
+The header is `PASS` / `FAIL` relative to `--crap-threshold` and reports
+`failures/total`. Use `--format edn` to get a machine-readable `{:results :failures :threshold}` map on stdout (stderr carries progress).
 
 Useful options:
 

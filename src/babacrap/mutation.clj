@@ -40,22 +40,38 @@
 
 
 (def token-replacements
-  ;; `'true` and `'false` read as booleans, not symbols — build keys and
-  ;; values with `symbol` so both sides are genuine symbols for dispatch.
-  (let [s symbol
-        pairs [["true" "false"] ["false" "true"]
-               ["=" "not="] ["not=" "="]
-               ["<" "<="] ["<=" "<"] [">" ">="] [">=" ">"]
-               ["+" "-"] ["-" "+"] ["*" "/"] ["/" "*"]
-               ["inc" "dec"] ["dec" "inc"]
-               ["and" "or"] ["or" "and"]
-               ["if" "if-not"] ["if-not" "if"]
-               ["when" "when-not"] ["when-not" "when"]
-               ["pos?" "neg?"] ["neg?" "pos?"] ["zero?" "pos?"]]]
-    (into {} (for [[k v] pairs] [(s k) (s v)]))))
+  ;; Keys are whatever `complexity/token-value` yields for the source token:
+  ;; booleans for `true`/`false`, symbols for everything else. Values are
+  ;; the *replacement value* — `render-replacement` turns them into source
+  ;; text so the data stays free of textual conventions. Boolean replacements
+  ;; are stored as booleans too (not symbols) because `'false` reads as the
+  ;; literal `false` after quoting.
+  {true false
+   false true
+   '= 'not=
+   'not= '=
+   '< '<=
+   '<= '<
+   '> '>=
+   '>= '>
+   '+ '-
+   '- '+
+   '* '/
+   '/ '*
+   'inc 'dec
+   'dec 'inc
+   'and 'or
+   'or 'and
+   'if 'if-not
+   'if-not 'if
+   'when 'when-not
+   'when-not 'when
+   'pos? 'neg?
+   'neg? 'pos?
+   'zero? 'pos?})
 
-(defn render-replacement [sym]
-  (pr-str sym))
+(defn render-replacement [value]
+  (pr-str value))
 
 (defn line-start-offsets [s]
   (loop [idx 0
@@ -112,9 +128,9 @@
 
 (defn collect-token-mutants [source line-starts filename functions node]
   (let [value (complexity/token-value node)]
-    (when-let [replacement-sym (get token-replacements value)]
+    (when (contains? token-replacements value)
       [(mutation source line-starts filename functions node
-                 :replace-token (render-replacement replacement-sym))])))
+                 :replace-token (render-replacement (get token-replacements value)))])))
 
 (defn collect-not-mutants [source line-starts filename functions node]
   (when (and (= :list (n/tag node))

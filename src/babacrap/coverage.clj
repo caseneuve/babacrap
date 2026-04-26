@@ -19,20 +19,22 @@
   (binding [*out* *err*] (print captured) (flush)))
 
 (defn capture-out
-  "Run `f` with *out* and clojure.test/*test-out* redirected to a buffer.
-  On success, returns {:result :captured}. On exception, replays the
-  captured chatter to *err* before rethrowing so progress stays visible
-  when something goes wrong."
+  "Run `f` with *out* and clojure.test/*test-out* captured into a single
+  string buffer. Returns {:result :captured} on success. On exception,
+  replays the captured chatter to *err* before rethrowing so progress
+  stays visible when something goes wrong."
   [f]
-  (let [sink (java.io.StringWriter.)]
-    (try
-      {:result (binding [*out* sink
-                         test/*test-out* sink]
-                 (f))
-       :captured (str sink)}
-      (catch Throwable t
-        (replay-to-err! (str sink))
-        (throw t)))))
+  (let [outcome (volatile! nil)
+        captured (with-out-str
+                   (binding [test/*test-out* *out*]
+                     (try
+                       (vreset! outcome {:result (f)})
+                       (catch Exception e
+                         (vreset! outcome {:error e})))))]
+    (when-let [e (:error @outcome)]
+      (replay-to-err! captured)
+      (throw e))
+    {:result (:result @outcome) :captured captured}))
 
 (defn run-cloverage! [opts]
   ;; Cloverage prints via *out*; clojure.test prints via *test-out*. Capture
