@@ -68,20 +68,20 @@
              (:crap (by-name 'simple)))))))
 
 (deftest crap-edn-stdout-is-clean-test
-  (testing "stdout is parseable EDN and stderr is quiet on success"
+  (testing "bb crap --format edn writes parseable EDN on stdout with quiet stderr"
     (fs/delete-tree "target/test-edn" {:force true})
-    (let [stdout-seen (volatile! nil)
-          err (util/with-captured-err
-                (vreset! stdout-seen
-                         (with-out-str
-                           (babacrap/-main "--format" "edn"
-                                           "--src" "test/fixtures/src"
-                                           "--test" "test/fixtures/test"
-                                           "--ns-regex" "demo.*"
-                                           "--test-ns-regex" ".*-test"
-                                           "--output" "target/test-edn"
-                                           "--crap-threshold" "999"))))
-          parsed (edn/read-string @stdout-seen)]
+    (let [{:keys [exit out err]}
+          (p/shell {:out :string :err :string :continue true}
+                   "bb" "crap"
+                   "--format" "edn"
+                   "--src" "test/fixtures/src"
+                   "--test" "test/fixtures/test"
+                   "--ns-regex" "demo.*"
+                   "--test-ns-regex" ".*-test"
+                   "--output" "target/test-edn"
+                   "--crap-threshold" "999")
+          parsed (edn/read-string out)]
+      (is (zero? exit))
       (is (map? parsed))
       (is (contains? parsed :results))
       (is (contains? parsed :threshold))
@@ -191,23 +191,24 @@
            (util/merge-with-defaults {:a 1} {:c :extra})))))
 
 (deftest capture-out-test
-  (testing "captures *out* and clojure.test/*test-out* and returns both"
-    (let [{:keys [result captured]}
+  (testing "success returns {:ok :captured}"
+    (let [{:keys [ok error captured]}
           (coverage/capture-out
            (fn []
              (println "regular")
              (binding [test/*test-out* *out*] (println "from-test"))
              42))]
-      (is (= 42 result))
+      (is (= 42 ok))
+      (is (nil? error))
       (is (str/includes? captured "regular"))
       (is (str/includes? captured "from-test"))))
-  (testing "rethrows and flushes captured buffer to *err*"
-    (let [err (util/with-captured-err
-                (try
-                  (coverage/capture-out
-                   (fn [] (println "before-throw") (throw (ex-info "boom" {}))))
-                  (catch Exception _ nil)))]
-      (is (str/includes? err "before-throw")))))
+  (testing "failure returns {:error :captured} — does not throw"
+    (let [{:keys [ok error captured]}
+          (coverage/capture-out
+           (fn [] (println "before-throw") (throw (ex-info "boom" {}))))]
+      (is (nil? ok))
+      (is (= "boom" (ex-message error)))
+      (is (str/includes? captured "before-throw")))))
 
 (deftest coverage-helper-test
   (testing "coverage file matching requires a path boundary"

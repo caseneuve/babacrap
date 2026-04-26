@@ -143,7 +143,7 @@ CRAP analysis: FAIL — 1/3 over threshold 10.00
 ```
 
 The header is `PASS` / `FAIL` relative to `--crap-threshold` and reports
-`failures/total`. Use `--format edn` to get a machine-readable `{:results :failures :threshold}` map on stdout (stderr carries progress).
+`failures/total`. Use `--format edn` to get a machine-readable `{:results :failures :threshold}` map on stdout. On a successful run stdout contains only the EDN payload — Cloverage chatter is captured and discarded. If Cloverage fails, the captured chatter is replayed to stderr so the underlying error is visible.
 
 Useful options:
 

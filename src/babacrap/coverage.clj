@@ -19,22 +19,26 @@
   (binding [*out* *err*] (print captured) (flush)))
 
 (defn capture-out
-  "Run `f` with *out* and clojure.test/*test-out* captured into a single
-  string buffer. Returns {:result :captured} on success. On exception,
-  replays the captured chatter to *err* before rethrowing so progress
-  stays visible when something goes wrong."
+  "Imperative shell helper: run `f` with `*out*` and `clojure.test/*test-out*`
+  redirected into a shared buffer, and return a pure description of the
+  outcome — never throws. Callers decide what to do with errors.
+
+  Returns one of:
+    {:ok result :captured s}  — f returned `result`
+    {:error e :captured s}    — f threw `e` (captured text still available)
+
+  A `volatile!` carries the result out of `with-out-str` since that macro
+  only returns the captured string. This is the one place in babacrap that
+  uses process-level mutable state; do not pattern-match on it elsewhere."
   [f]
   (let [outcome (volatile! nil)
         captured (with-out-str
                    (binding [test/*test-out* *out*]
                      (try
-                       (vreset! outcome {:result (f)})
+                       (vreset! outcome {:ok (f)})
                        (catch Exception e
                          (vreset! outcome {:error e})))))]
-    (when-let [e (:error @outcome)]
-      (replay-to-err! captured)
-      (throw e))
-    {:result (:result @outcome) :captured captured}))
+    (assoc @outcome :captured captured)))
 
 (defn run-cloverage! [opts]
   ;; Cloverage prints via *out*; clojure.test prints via *test-out*. Capture
@@ -42,15 +46,19 @@
   ;; must be parseable). On any failure replay the captured chatter to stderr
   ;; so users can debug; on success discard it.
   (let [args (cloverage-args opts)
-        {exit-code :result
-         captured :captured} (capture-out
-                              #(binding [cloverage/*exit-after-test* false]
-                                 (apply cloverage/-main args)))]
-    (when-not (zero? exit-code)
-      (replay-to-err! captured)
-      (throw (ex-info "Cloverage failed" {:exit-code exit-code
-                                          :args args})))
-    (str (fs/path (:output opts) "raw-stats.clj"))))
+        {:keys [ok error captured]}
+        (capture-out #(binding [cloverage/*exit-after-test* false]
+                        (apply cloverage/-main args)))]
+    (cond
+      error
+      (do (replay-to-err! captured) (throw error))
+
+      (not (zero? ok))
+      (do (replay-to-err! captured)
+          (throw (ex-info "Cloverage failed" {:exit-code ok :args args})))
+
+      :else
+      (str (fs/path (:output opts) "raw-stats.clj")))))
 
 (defn read-raw-stats [raw-stats-file]
   ;; Cloverage raw stats are printed with clojure.pprint, not as strict EDN.
