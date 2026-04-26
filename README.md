@@ -221,8 +221,11 @@ Current rules look for:
 Text output is intended for humans. EDN output is intended for agents, editor
 integrations, or follow-up tooling.
 
-Agents can also use the bundled `hickey` skill in `skills/hickey/` for a guided
-Simple Made Easy / decomplecting workflow around `bb detangle`.
+Agents can use bundled project skills for repeatable workflows:
+
+- `skills/crap/` — run and interpret CRAP analysis.
+- `skills/mutate/` — run mutation analysis safely.
+- `skills/hickey/` — guide Simple Made Easy / decomplecting reviews around `bb detangle`.
 
 ## Use only the clj-kondo complexity linter
 
