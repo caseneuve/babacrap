@@ -21,15 +21,17 @@
 (defn capture-out
   "Imperative shell helper: run `f` with `*out*` and `clojure.test/*test-out*`
   redirected into a shared buffer, and return a pure description of the
-  outcome — never throws. Callers decide what to do with errors.
+  outcome. Callers decide what to do with errors.
 
   Returns one of:
     {:ok result :captured s}  — f returned `result`
-    {:error e :captured s}    — f threw `e` (captured text still available)
+    {:error e :captured s}    — f threw an `Exception` (captured text still available)
 
-  A `volatile!` carries the result out of `with-out-str` since that macro
-  only returns the captured string. This is the one place in babacrap that
-  uses process-level mutable state; do not pattern-match on it elsewhere."
+  Only ordinary `Exception` values are caught; `Error`s and other
+  `Throwable`s propagate. A `volatile!` carries the outcome out of
+  `with-out-str` since that macro only returns the captured string. This
+  is the one place in babacrap that uses process-level mutable state; do
+  not pattern-match on it elsewhere."
   [f]
   (let [outcome (volatile! nil)
         captured (with-out-str
