@@ -5,6 +5,7 @@
             [babacrap.mutation :as mutation]
             [babashka.fs :as fs]
             [babashka.process :as p]
+            [cloverage.coverage :as cloverage]
             [clojure.edn :as edn]
             [clojure.string :as str]
             [clojure.test :refer [deftest is testing]]
@@ -65,6 +66,41 @@
       (is (> (:crap (by-name 'uncovered-complex))
              (:crap (by-name 'simple)))))))
 
+(deftest crap-edn-stdout-is-clean-test
+  (testing "stdout is parseable EDN and stderr is quiet on success"
+    (fs/delete-tree "target/test-edn" {:force true})
+    (let [err (java.io.StringWriter.)
+          stdout (with-out-str
+                   (binding [*err* err]
+                     (babacrap/-main "--format" "edn"
+                                     "--src" "test/fixtures/src"
+                                     "--test" "test/fixtures/test"
+                                     "--ns-regex" "demo.*"
+                                     "--test-ns-regex" ".*-test"
+                                     "--output" "target/test-edn"
+                                     "--crap-threshold" "999")))
+          parsed (edn/read-string stdout)]
+      (is (map? parsed))
+      (is (contains? parsed :results))
+      (is (contains? parsed :threshold))
+      (is (str/blank? (str err))
+          (str "expected stderr to be empty on success, got:\n" err)))))
+
+(deftest crap-cloverage-chatter-surfaces-on-failure-test
+  (testing "captured cloverage output is forwarded to stderr when cloverage fails"
+    (with-redefs [cloverage/-main
+                  (fn [& _] (println "boom-chatter") 1)]
+      (let [err (java.io.StringWriter.)]
+        (binding [*err* err]
+          (try
+            (coverage/run-cloverage! {:src-paths ["src"]
+                                      :test-paths ["test"]
+                                      :ns-regex [".*"]
+                                      :test-ns-regex [".*-test"]
+                                      :output "target/test-edn"})
+            (catch Exception _ nil)))
+        (is (str/includes? (str err) "boom-chatter"))))))
+
 (deftest crap-cli-run-test
   (testing "CRAP CLI run supports no-coverage mode"
     (is (zero? (:exit (babacrap/run-result ["--no-coverage"
@@ -100,11 +136,33 @@
                 :tracked-forms 10
                 :covered-forms 5
                 :crap 11.25}]
-    (testing "core text rendering is readable"
-      (let [out (babacrap/format-text [result])]
-        (is (str/includes? out "CRAP analysis"))
-        (is (str/includes? out "src/demo.clj:1 demo/f"))
-        (is (str/includes? out "coverage:   50.0% (5/10 forms)"))))
+    (testing "output starts with a blank line to separate from prior output"
+      (is (str/starts-with? (babacrap/format-text {:results [] :failures [] :threshold 30.0})
+                            "\n")))
+    (testing "PASS header when no results exceed the threshold"
+      (let [out (babacrap/format-text {:results [result] :failures [] :threshold 30.0})
+            header (second (str/split-lines out))]
+        (is (str/starts-with? header "CRAP analysis: PASS"))
+        (is (str/includes? header "0/1"))
+        (is (str/includes? header "30.00"))))
+    (testing "FAIL header when any result exceeds the threshold"
+      (let [failing (assoc result :crap 42.0)
+            out (babacrap/format-text {:results [failing] :failures [failing] :threshold 30.0})
+            header (second (str/split-lines out))]
+        (is (str/starts-with? header "CRAP analysis: FAIL"))
+        (is (str/includes? header "1/1"))))
+    (testing "empty results render a PASS header"
+      (let [out (babacrap/format-text {:results [] :failures [] :threshold 30.0})]
+        (is (str/includes? out "CRAP analysis: PASS"))
+        (is (str/includes? out "no functions"))))
+    (testing "table carries each result's summary"
+      (let [out (babacrap/format-text {:results [result] :failures [] :threshold 30.0})
+            lines (str/split-lines out)]
+        (is (some #(re-find #"(?i)CRAP\s+\|\s+COMPLEX\s+\|\s+COVERAGE\s+\|\s+LOCATION" %) lines))
+        (is (some #(and (str/includes? % "11.25")
+                        (str/includes? % "50.0%")
+                        (str/includes? % "src/demo.clj:1 demo/f"))
+                  lines))))
     (testing "core emit-result writes to the requested stream"
       (is (= "hello\n" (with-out-str (babacrap/emit-result {:out "hello"}))))
       (is (= "oops\n" (with-out-str (binding [*err* *out*]
@@ -125,6 +183,37 @@
     (is (coverage/file-matches? "demo/core.clj" "demo/core.clj" "test/fixtures/src/demo/core.clj"))
     (is (not (coverage/file-matches? "core.clj" "demo/core.clj" "test/fixtures/src/demo/core.clj")))
     (is (not (coverage/file-matches? "core.clj" "other/core.clj" "test/fixtures/src/demo/core.clj")))))
+
+(deftest mutation-rendering-test
+  (let [mutant {:id 1 :filename "src/demo.clj" :row 5 :col 3
+                :mutator :replace-token :original "if" :replacement "if-not"
+                :function {:var 'demo/f}}]
+    (testing "output starts with a blank line to separate from prior output"
+      (is (str/starts-with? (mutation/format-text []) "\n")))
+    (testing "PASS header when nothing survived"
+      (let [out (mutation/format-text [(assoc mutant :status :killed)])
+            header (second (str/split-lines out))]
+        (is (str/starts-with? header "Mutation analysis: PASS"))
+        (is (str/includes? header "1 killed"))
+        (is (str/includes? header "score 100.0%"))))
+    (testing "FAIL header when mutants survived"
+      (let [out (mutation/format-text [(assoc mutant :status :survived)])
+            header (second (str/split-lines out))]
+        (is (str/starts-with? header "Mutation analysis: FAIL"))
+        (is (str/includes? header "1 survived"))))
+    (testing "empty results render a PASS header"
+      (let [out (mutation/format-text [])]
+        (is (str/includes? out "Mutation analysis: PASS"))
+        (is (str/includes? out "no mutants"))))
+    (testing "table carries each mutant's summary"
+      (let [out (mutation/format-text [(assoc mutant :status :survived)])
+            lines (str/split-lines out)]
+        (is (some #(re-find #"(?i)ID\s+\|\s+STATUS\s+\|\s+LOCATION\s+\|\s+MUTATION" %) lines))
+        (is (some #(and (str/includes? % "#1")
+                        (str/includes? % "survived")
+                        (str/includes? % "src/demo.clj:5:3")
+                        (str/includes? % "\"if\" => \"if-not\""))
+                  lines))))))
 
 (deftest mutation-helper-test
   (testing "mutation helpers reject non-matching inputs"
@@ -158,25 +247,11 @@
                 (:survived mutation-summary)
                 (:timeout mutation-summary)))))))
 
-(deftest mutation-rendering-test
-  (let [result {:id 1
-                :filename "src/demo.clj"
-                :row 1
-                :col 1
-                :mutator :replace-token
-                :original "x"
-                :replacement "y"
-                :status :survived
-                :function {:var 'demo/f}}]
-    (testing "mutation text rendering is readable"
-      (let [out (mutation/format-text [result])]
-        (is (str/includes? out "Mutation analysis"))
-        (is (str/includes? out "#1 survived src/demo.clj:1:1 demo/f"))
-        (is (str/includes? out "replace-token: \"x\" => \"y\""))))
-    (testing "mutation emit-result writes to the requested stream"
-      (is (= "hello\n" (with-out-str (mutation/emit-result {:out "hello"}))))
-      (is (= "oops\n" (with-out-str (binding [*err* *out*]
-                                        (mutation/emit-result {:err "oops"}))))))))
+(deftest mutation-emit-result-test
+  (testing "mutation emit-result writes to the requested stream"
+    (is (= "hello\n" (with-out-str (mutation/emit-result {:out "hello"}))))
+    (is (= "oops\n" (with-out-str (binding [*err* *out*]
+                                      (mutation/emit-result {:err "oops"})))))))
 
 (deftest mutation-cli-run-test
   (testing "mutation CLI returns non-zero when mutants survive"

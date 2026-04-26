@@ -16,8 +16,10 @@
 
   crap
   {:doc "Run CRAP analysis"
-   :task (apply shell "bb" "-m" "babacrap.core" *command-line-args*)}
+   :requires ([babacrap.core])
+   :task (apply babacrap.core/-main *command-line-args*)}
 
   mutate
   {:doc "Run mutation analysis"
-   :task (apply shell "bb" "-m" "babacrap.mutation" *command-line-args*)}}}
+   :requires ([babacrap.mutation])
+   :task (apply babacrap.mutation/-main *command-line-args*)}}}

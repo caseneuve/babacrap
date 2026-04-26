@@ -2,6 +2,7 @@
   (:gen-class)
   (:require [babacrap.complexity :as complexity]
             [babacrap.coverage :as coverage]
+            [babacrap.table :as table]
             [clojure.pprint :as pprint]
             [clojure.string :as str]
             [clojure.tools.cli :as cli]))
@@ -82,22 +83,35 @@
   (str var (when (pos? arity-index)
              (str "#" arity-index))))
 
-(defn result-lines
+(defn result-row
   [{:keys [filename row complexity coverage tracked-forms covered-forms crap]
     :as result}]
-  [(format "%s:%s %s" filename row (function-label result))
-   (format "  complexity: %s" complexity)
-   (format "  coverage:   %s (%s/%s forms)"
-           (pct coverage) covered-forms tracked-forms)
-   (format "  CRAP:       %s" (format-score crap))])
+  [(format-score crap)
+   (str complexity)
+   (format "%s (%s/%s)" (pct coverage) covered-forms tracked-forms)
+   (format "%s:%s %s" filename row (function-label result))])
 
-(defn format-text [results]
-  (str/join
-   \newline
-   (if (seq results)
-     (concat ["CRAP analysis" "-------------"]
-             (mapcat result-lines results))
-     ["No functions found."])))
+(def ^:private result-columns
+  [{:header "CRAP" :align :right}
+   {:header "COMPLEX" :align :right}
+   {:header "COVERAGE" :align :right}
+   {:header "LOCATION" :align :left}])
+
+(defn header-line [{:keys [results failures threshold]}]
+  (if (empty? results)
+    "CRAP analysis: PASS — no functions found."
+    (let [status (if (seq failures) "FAIL" "PASS")]
+      (format "CRAP analysis: %s — %s/%s over threshold %s"
+              status (count failures) (count results) (format-score threshold)))))
+
+(defn format-text [{:keys [results] :as report-data}]
+  (let [header (header-line report-data)]
+    (str \newline
+         (if (empty? results)
+           header
+           (str header
+                \newline
+                (table/render result-columns (map result-row results)))))))
 
 (defn over-threshold [threshold results]
   (filter #(> (:crap %) threshold) results))
@@ -128,10 +142,10 @@
 (defn render-edn [x]
   (str/trimr (with-out-str (pprint/pprint x))))
 
-(defn render-report [{:keys [results] :as report-data} format]
+(defn render-report [report-data format]
   (case format
     :edn (render-edn report-data)
-    :text (format-text results)))
+    :text (format-text report-data)))
 
 (defn run-result [args]
   (let [{:keys [options errors summary]} (cli/parse-opts args cli-options)

@@ -1,6 +1,7 @@
 (ns babacrap.coverage
   (:require [babashka.fs :as fs]
             [clojure.string :as str]
+            [clojure.test :as test]
             [cloverage.coverage :as cloverage]))
 
 (defn cloverage-args [{:keys [src-paths test-paths ns-regex test-ns-regex output]}]
@@ -15,10 +16,21 @@
     (mapcat (fn [r] ["--test-ns-regex" r]) test-ns-regex))))
 
 (defn run-cloverage! [opts]
+  ;; Cloverage prints via *out*; clojure.test prints via *test-out*. We
+  ;; capture both into a buffer so stdout stays reserved for our own result
+  ;; payload (`--format edn` must be parseable). On failure we replay the
+  ;; captured chatter to stderr so users can debug; on success we discard it.
   (let [args (cloverage-args opts)
-        exit-code (binding [cloverage/*exit-after-test* false]
-                    (apply cloverage/-main args))]
+        sink (java.io.StringWriter.)
+        exit-code (binding [cloverage/*exit-after-test* false
+                            *out* sink
+                            test/*test-out* sink]
+                    (try (apply cloverage/-main args)
+                         (catch Throwable t
+                           (binding [*out* *err*] (print (str sink)) (flush))
+                           (throw t))))]
     (when-not (zero? exit-code)
+      (binding [*out* *err*] (print (str sink)) (flush))
       (throw (ex-info "Cloverage failed" {:exit-code exit-code
                                           :args args})))
     (str (fs/path (:output opts) "raw-stats.clj"))))

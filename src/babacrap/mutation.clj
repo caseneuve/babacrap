@@ -1,6 +1,7 @@
 (ns babacrap.mutation
   (:gen-class)
   (:require [babacrap.complexity :as complexity]
+            [babacrap.table :as table]
             [babashka.fs :as fs]
             [babashka.process :as process]
             [clojure.pprint :as pprint]
@@ -264,22 +265,35 @@
 (defn format-function [{:keys [var]}]
   (or (some-> var str) "<unknown>"))
 
+(defn header-line [results]
+  (if (empty? results)
+    "Mutation analysis: PASS — no mutants generated."
+    (let [{:keys [total killed survived timeout mutation-score]} (summarize results)
+          status (if (pos? survived) "FAIL" "PASS")]
+      (format "Mutation analysis: %s — %s killed, %s survived, %s timeout of %s (score %.1f%%)"
+              status killed survived timeout total mutation-score))))
+
+(defn mutant-row
+  [{:keys [id filename row col mutator original replacement status function]}]
+  [(str "#" id)
+   (name status)
+   (format "%s:%s:%s %s" filename row col (format-function function))
+   (format "%s: %s => %s" (name mutator) (pr-str original) (pr-str replacement))])
+
+(def ^:private mutant-columns
+  [{:header "ID" :align :right}
+   {:header "STATUS" :align :left}
+   {:header "LOCATION" :align :left}
+   {:header "MUTATION" :align :left}])
+
 (defn format-text [results]
-  (let [{:keys [total killed survived timeout mutation-score]} (summarize results)]
-    (str/join
-     \newline
-     (concat
-      ["Mutation analysis"
-       "-----------------"
-       (format "mutants: %s, killed: %s, survived: %s, timeout: %s, score: %.1f%%"
-               total killed survived timeout mutation-score)]
-      (when (seq results)
-        (concat
-         [""]
-         (mapcat (fn [{:keys [id filename row col mutator original replacement status function]}]
-                   [(format "#%s %s %s:%s:%s %s" id (name status) filename row col (format-function function))
-                    (format "  %s: %s => %s" (name mutator) (pr-str original) (pr-str replacement))])
-                 results)))))))
+  (let [header (header-line results)]
+    (str \newline
+         (if (empty? results)
+           header
+           (str header
+                \newline
+                (table/render mutant-columns (map mutant-row results)))))))
 
 (defn merge-defaults [opts]
   (merge default-options
