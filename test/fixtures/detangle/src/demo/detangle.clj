@@ -14,6 +14,12 @@
     :deleted :delete
     :updated :update))
 
+(defn route-event! [event]
+  (cond
+    (= (:kind event) :created) :create
+    (= (:kind event) :deleted) :delete
+    :else :ignore))
+
 (defn subtotal [item]
   (cond
     (instance? Product item) 1
@@ -31,6 +37,13 @@
       (when (:active? u)
         (swap! result conj u)))
     @result))
+
+(defn collect-active-explicit-deref [users]
+  (let [result (atom [])]
+    (doseq [u users]
+      (when (:active? u)
+        (swap! result conj u)))
+    (deref result)))
 
 (defn literal-case [currency]
   (case currency

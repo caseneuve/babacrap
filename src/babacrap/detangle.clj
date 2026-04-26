@@ -42,11 +42,19 @@
 (def dispatch-keys
   #{:type :kind :op :event :status})
 
-(defn sexpr-safe [node]
-  (try
-    (n/sexpr node)
-    (catch Exception _
-      nil)))
+(def sexpr-tags
+  #{:token :list :vector :map :set :string :quote :deref})
+
+(defn node-tag [node]
+  (when node
+    (n/tag node)))
+
+(defn sexpr-value
+  "Return a node's s-expression only for tags this analyzer intentionally
+  treats as value forms. Other tags are not data for current detector rules."
+  [node]
+  (when (and node (contains? sexpr-tags (node-tag node)))
+    (n/sexpr node)))
 
 (defn node-location [node]
   (select-keys (meta node) [:row :col :end-row :end-col]))
@@ -58,13 +66,13 @@
   (:col (meta node)))
 
 (defn list-form? [node]
-  (= :list (n/tag node)))
+  (= :list (node-tag node)))
 
 (defn vector-form? [node]
-  (= :vector (n/tag node)))
+  (= :vector (node-tag node)))
 
 (defn deref-form? [node]
-  (= :deref (n/tag node)))
+  (= :deref (node-tag node)))
 
 (defn form-head [node]
   (when (list-form? node)
@@ -77,7 +85,7 @@
   "Pure depth-first node sequence. Quoted code is data, so detector rules do
   not inspect it as runtime behavior."
   [node]
-  (when-not (contains? skip-walk-tags (n/tag node))
+  (when-not (contains? skip-walk-tags (node-tag node))
     (cons node (mapcat walk-nodes (complexity/children node)))))
 
 (defn function-label [{:keys [var arity-index]}]
@@ -87,7 +95,7 @@
 (defn function-info
   "Pure: attach body nodes to complexity inventory facts for one arity."
   [filename ns-sym resource-file arity]
-  (let [name-sym (some-> arity :name-node sexpr-safe)
+  (let [name-sym (some-> arity :name-node sexpr-value)
         location-node (:location-node arity)
         location (node-location location-node)]
     (when name-sym
@@ -169,16 +177,16 @@
                  (contains? dispatch-keys key)
                  target)
         {:key key
-         :target (sexpr-safe target)}))))
+         :target (sexpr-value target)}))))
 
 (defn get-access? [node]
   (when (list-form? node)
     (let [[op target key] (complexity/children node)]
       (when (and (= 'get (complexity/token-value op))
-                 (contains? dispatch-keys (sexpr-safe key))
+                 (contains? dispatch-keys (sexpr-value key))
                  target)
-        {:key (sexpr-safe key)
-         :target (sexpr-safe target)}))))
+        {:key (sexpr-value key)
+         :target (sexpr-value target)}))))
 
 (defn dispatch-access [node]
   (or (keyword-access? node)
@@ -188,7 +196,7 @@
   (let [[_op _expr & clauses] (complexity/children case-node)]
     (complexity/count-case-tests clauses)))
 
-(defn data-dispatch-findings [fn-info]
+(defn case-data-dispatch-findings [fn-info]
   (for [node (function-nodes fn-info)
         :when (and (list-form? node)
                    (= 'case (form-head node)))
@@ -202,7 +210,7 @@
              node
              "Can data-based dispatch be separated from branch behavior?"
              {:form 'case
-              :dispatch-expr (sexpr-safe expr)
+              :dispatch-expr (sexpr-value expr)
               :dispatch-key (:key dispatch)
               :dispatch-target (:target dispatch)
               :branches branches})))
@@ -212,12 +220,63 @@
     (remove #(complexity/kw-node? % :else)
             (complexity/pair-tests clauses))))
 
+(defn equality-dispatch-test [node]
+  (when (and (list-form? node)
+             (= '= (form-head node)))
+    (let [[_op left right & more] (complexity/children node)]
+      (when-not (seq more)
+        (let [left-dispatch (dispatch-access left)
+              right-dispatch (dispatch-access right)]
+          (cond
+            left-dispatch
+            (assoc left-dispatch
+                   :dispatch-expr (sexpr-value left)
+                   :value (sexpr-value right))
+
+            right-dispatch
+            (assoc right-dispatch
+                   :dispatch-expr (sexpr-value right)
+                   :value (sexpr-value left))))))))
+
+(defn same-dispatch-key [{:keys [key target dispatch-expr]}]
+  [key target dispatch-expr])
+
+(defn repeated-cond-dispatches [cond-node]
+  (->> (cond-test-nodes cond-node)
+       (keep equality-dispatch-test)
+       (group-by same-dispatch-key)
+       (keep (fn [[_ tests]]
+               (when (>= (count tests) 2)
+                 (let [{:keys [key target dispatch-expr]} (first tests)]
+                   {:form 'cond
+                    :dispatch-expr dispatch-expr
+                    :dispatch-key key
+                    :dispatch-target target
+                    :branches (count tests)
+                    :values (mapv :value tests)}))))))
+
+(defn cond-data-dispatch-findings [fn-info]
+  (for [node (function-nodes fn-info)
+        :when (and (list-form? node)
+                   (= 'cond (form-head node)))
+        dispatch (repeated-cond-dispatches node)]
+    (finding fn-info
+             :dispatch/data-dispatch
+             3
+             node
+             "Can data-based dispatch be separated from branch behavior?"
+             dispatch)))
+
+(defn data-dispatch-findings [fn-info]
+  (concat (case-data-dispatch-findings fn-info)
+          (cond-data-dispatch-findings fn-info)))
+
 (defn instance-test [node]
   (when (and (list-form? node)
              (= 'instance? (form-head node)))
     (let [[_op type-node subject-node] (complexity/children node)
-          type-expr (sexpr-safe type-node)
-          subject-expr (sexpr-safe subject-node)]
+          type-expr (sexpr-value type-node)
+          subject-expr (sexpr-value subject-node)]
       (when (and type-expr subject-expr)
         {:type type-expr
          :subject subject-expr}))))
@@ -244,7 +303,7 @@
              group)))
 
 (defn deep-vector-path [node]
-  (let [path (sexpr-safe node)]
+  (let [path (sexpr-value node)]
     (when (and (vector? path)
                (>= (count path) 2))
       path)))
@@ -253,7 +312,7 @@
   (when (and (list-form? node)
              (= 'get-in (form-head node)))
     (let [[_op root-node path-node] (complexity/children node)
-          root (sexpr-safe root-node)
+          root (sexpr-value root-node)
           path (deep-vector-path path-node)]
       (when (and (symbol? root) path)
         {:root root
@@ -290,7 +349,7 @@
 
 (defn atom-binding [binding-pair]
   (let [[name-node init-node] binding-pair
-        local (sexpr-safe name-node)]
+        local (sexpr-value name-node)]
     (when (and (symbol? local)
                (list-form? init-node)
                (= 'atom (form-head init-node)))
@@ -304,17 +363,25 @@
   (when (and (list-form? node)
              (contains? '#{swap! reset!} (form-head node)))
     (let [[op-node target-node] (complexity/children node)
-          target (sexpr-safe target-node)]
+          target (sexpr-value target-node)]
       (when (contains? locals target)
         {:op (complexity/token-value op-node)
          :local target}))))
 
+(defn deref-target [node]
+  (cond
+    (deref-form? node)
+    (some-> node complexity/children first sexpr-value)
+
+    (and (list-form? node)
+         (contains? '#{deref clojure.core/deref} (form-head node)))
+    (some-> node complexity/children second sexpr-value)))
+
 (defn deref-local [locals node]
-  (when (deref-form? node)
-    (let [target (some-> node complexity/children first sexpr-safe)]
-      (when (contains? locals target)
-        {:op 'deref
-         :local target}))))
+  (let [target (deref-target node)]
+    (when (contains? locals target)
+      {:op 'deref
+       :local target})))
 
 (defn local-mutation-evidence [locals body-nodes]
   (let [nodes (mapcat walk-nodes body-nodes)

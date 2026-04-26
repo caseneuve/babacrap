@@ -2,12 +2,14 @@
 
 Simple CRAP and mutation analysis for babashka/Clojure projects.
 
-Babacrap currently has three pieces:
+Babacrap currently has four pieces:
 
 1. a clj-kondo config export for editor/CI cyclomatic-complexity warnings;
 2. a babashka CLI that runs Cloverage, combines coverage with complexity, and
    prints CRAP scores;
-3. a simple babashka-native mutation runner.
+3. a simple babashka-native mutation runner;
+4. a prototype `detangle` command that emits deterministic investigation
+   signals for code shapes that may braid independently varying concerns.
 
 ## CRAP score
 
@@ -102,6 +104,14 @@ Add babacrap as a GitHub dependency in the target project's `bb.edn`:
           "bb" "-m" "babacrap.mutation"
           "--src" "src"
           "--test-command" "bb test"
+          *command-line-args*)}
+
+  detangle
+  {:doc "Run decomplecting investigation signals"
+   :task
+   (apply shell
+          "bb" "-m" "babacrap.detangle"
+          "--src" "src"
           *command-line-args*)}}}
 ```
 
@@ -118,6 +128,7 @@ Run:
 ```sh
 bb crap
 bb mutate
+bb detangle
 ```
 
 Example output:
@@ -182,6 +193,33 @@ Current mutators include:
 - logical/control swaps: `and` ↔ `or`, `if` ↔ `if-not`, `when` ↔ `when-not`;
 - condition forcing for `if`/`when` forms;
 - `(not x)` removal.
+
+## Run detangle investigation
+
+`detangle` is a prototype signal generator inspired by Rich Hickey's
+"decomplecting" vocabulary. It does not apply refactorings and does not claim
+to be a complete design review. It parses local source files and emits
+evidence-backed questions about code shapes that often mix independently
+varying concerns.
+
+Useful options:
+
+```sh
+bb detangle --src src
+bb detangle --src src --format edn
+```
+
+Current rules look for:
+
+- hidden time/randomness calls such as `(System/currentTimeMillis)`;
+- data dispatch through `case` or repeated `cond` equality checks over keys
+  such as `:type`, `:kind`, or `:op`;
+- repeated `instance?` checks over the same subject;
+- repeated deep `get-in` paths in rule-like functions;
+- local atom accumulation that is mutated and then dereferenced.
+
+Text output is intended for humans. EDN output is intended for agents, editor
+integrations, or follow-up tooling.
 
 ## Use only the clj-kondo complexity linter
 
