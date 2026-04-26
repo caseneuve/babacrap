@@ -2,6 +2,7 @@
   (:gen-class)
   (:require [babacrap.complexity :as complexity]
             [babacrap.table :as table]
+            [babacrap.util :as util]
             [babashka.fs :as fs]
             [babashka.process :as process]
             [clojure.pprint :as pprint]
@@ -39,29 +40,22 @@
 
 
 (def token-replacements
-  {'true "false"
-   'false "true"
-   '= "not="
-   'not= "="
-   '< "<="
-   '<= "<"
-   '> ">="
-   '>= ">"
-   '+ "-"
-   '- "+"
-   '* "/"
-   '/ "*"
-   'inc "dec"
-   'dec "inc"
-   'and "or"
-   'or "and"
-   'if "if-not"
-   'if-not "if"
-   'when "when-not"
-   'when-not "when"
-   'pos? "neg?"
-   'neg? "pos?"
-   'zero? "pos?"})
+  ;; `'true` and `'false` read as booleans, not symbols — build keys and
+  ;; values with `symbol` so both sides are genuine symbols for dispatch.
+  (let [s symbol
+        pairs [["true" "false"] ["false" "true"]
+               ["=" "not="] ["not=" "="]
+               ["<" "<="] ["<=" "<"] [">" ">="] [">=" ">"]
+               ["+" "-"] ["-" "+"] ["*" "/"] ["/" "*"]
+               ["inc" "dec"] ["dec" "inc"]
+               ["and" "or"] ["or" "and"]
+               ["if" "if-not"] ["if-not" "if"]
+               ["when" "when-not"] ["when-not" "when"]
+               ["pos?" "neg?"] ["neg?" "pos?"] ["zero?" "pos?"]]]
+    (into {} (for [[k v] pairs] [(s k) (s v)]))))
+
+(defn render-replacement [sym]
+  (pr-str sym))
 
 (defn line-start-offsets [s]
   (loop [idx 0
@@ -117,10 +111,10 @@
 (declare collect*)
 
 (defn collect-token-mutants [source line-starts filename functions node]
-  ;; Replacement values are raw source text inserted at the token's range.
   (let [value (complexity/token-value node)]
-    (when-let [replacement (get token-replacements value)]
-      [(mutation source line-starts filename functions node :replace-token replacement)])))
+    (when-let [replacement-sym (get token-replacements value)]
+      [(mutation source line-starts filename functions node
+                 :replace-token (render-replacement replacement-sym))])))
 
 (defn collect-not-mutants [source line-starts filename functions node]
   (when (and (= :list (n/tag node))
@@ -151,14 +145,27 @@
 (defn with-ids [mutants]
   (map-indexed (fn [idx m] (assoc m :id (inc idx))) mutants))
 
-(defn collect-file-mutants [filename]
-  (let [source (slurp filename)
-        line-starts (line-start-offsets source)
-        forms-node (p/parse-file-all filename)
-        functions (vec (complexity/analyze-file filename))]
-    (->> (collect* source line-starts filename functions forms-node)
+(defn parse-file
+  "IO: read `filename` once and return a map with its source text and
+  parsed forms, ready to feed into pure analysis."
+  [filename]
+  {:filename filename
+   :source (slurp filename)
+   :forms (p/parse-file-all filename)})
+
+(defn collect-file-mutants-from
+  "Pure: given a parsed file and a function inventory, return the valid
+  mutants for that file."
+  [{:keys [filename source forms]} functions]
+  (let [line-starts (line-start-offsets source)]
+    (->> (collect* source line-starts filename functions forms)
          (remove nil?)
          (filter :function))))
+
+(defn collect-file-mutants [filename]
+  (let [parsed (parse-file filename)
+        functions (vec (complexity/analyze-forms (:forms parsed) filename))]
+    (collect-file-mutants-from parsed functions)))
 
 (defn collect-mutants [src-paths]
   (->> (complexity/source-files src-paths)
@@ -196,22 +203,26 @@
         (assoc @proc :timeout? true :exit timeout-marker))
       result)))
 
-(defn file-dirty? [filename]
-  ;; True when git reports uncommitted changes for `filename` (tracked diff
-  ;; or untracked). false when git is unavailable or the file isn't in a
-  ;; repo — in both cases there is no worktree we can corrupt, so the
-  ;; caller should proceed.
+(defn git-status
+  "Classify `filename` via git. Returns :clean, :dirty, or :unknown.
+  :unknown covers the cases where git is missing, the path is outside a
+  repo, or git itself errored — nothing we can corrupt, so callers are
+  free to proceed."
+  [filename]
   (let [path (fs/absolutize filename)
         dir (or (fs/parent path) (fs/path "."))
         {:keys [exit out]}
         (process/sh {:dir (str dir)
                      :out :string :err :string :continue true}
                     "git" "status" "--porcelain" "--" (str (fs/file-name path)))]
-    (and (zero? exit)
-         (boolean (seq (str/trim (or out "")))))))
+    (cond
+      (not (zero? exit)) :unknown
+      (seq (str/trim (or out ""))) :dirty
+      :else :clean)))
 
 (defn dirty-targets [filenames]
-  (vec (filter file-dirty? filenames)))
+  ;; Policy: treat :unknown as not-dirty — nothing to corrupt if there's no repo.
+  (vec (filter #(= :dirty (git-status %)) filenames)))
 
 (defn run-test-command [{:keys [test-command timeout-ms]}]
   (let [proc (process/process {:out :string
@@ -265,13 +276,17 @@
 (defn format-function [{:keys [var]}]
   (or (some-> var str) "<unknown>"))
 
-(defn header-line [results]
-  (if (empty? results)
-    "Mutation analysis: PASS — no mutants generated."
-    (let [{:keys [total killed survived timeout mutation-score]} (summarize results)
-          status (if (pos? survived) "FAIL" "PASS")]
-      (format "Mutation analysis: %s — %s killed, %s survived, %s timeout of %s (score %.1f%%)"
-              status killed survived timeout total mutation-score))))
+(defn report [results]
+  {:results results
+   :summary (summarize results)})
+
+(defn header-line [{:keys [summary]}]
+  (let [{:keys [total killed survived timeout mutation-score]} summary]
+    (if (zero? total)
+      "Mutation analysis: PASS — no mutants generated."
+      (let [status (if (pos? survived) "FAIL" "PASS")]
+        (format "Mutation analysis: %s — %s killed, %s survived, %s timeout of %s (score %.1f%%)"
+                status killed survived timeout total mutation-score)))))
 
 (defn mutant-row
   [{:keys [id filename row col mutator original replacement status function]}]
@@ -286,8 +301,8 @@
    {:header "LOCATION" :align :left}
    {:header "MUTATION" :align :left}])
 
-(defn format-text [results]
-  (let [header (header-line results)]
+(defn format-text [{:keys [results] :as report-data}]
+  (let [header (header-line report-data)]
     (str \newline
          (if (empty? results)
            header
@@ -296,8 +311,7 @@
                 (table/render mutant-columns (map mutant-row results)))))))
 
 (defn merge-defaults [opts]
-  (merge default-options
-         (into {} (remove (fn [[_ v]] (= [] v)) opts))))
+  (util/merge-with-defaults default-options opts))
 
 (defn usage [summary]
   (str/join
@@ -325,14 +339,13 @@
 (defn render-edn [x]
   (str/trimr (with-out-str (pprint/pprint x))))
 
-(defn render-report [results format]
-  (let [summary (summarize results)]
-    (case format
-      :edn (render-edn {:summary summary :results results})
-      :text (format-text results))))
+(defn render-report [report-data format]
+  (case format
+    :edn (render-edn report-data)
+    :text (format-text report-data)))
 
-(defn mutation-exit-code [results]
-  (if (pos? (:survived (summarize results))) 1 0))
+(defn mutation-exit-code [{:keys [summary]}]
+  (if (pos? (:survived summary)) 1 0))
 
 (defn run-result [args]
   (let [{:keys [options errors summary]} (cli/parse-opts args cli-options)
@@ -356,9 +369,9 @@
           (if (seq dirty)
             {:exit 3
              :err (dirty-targets-text dirty)}
-            (let [results (run-mutation-analysis options)]
-              {:exit (mutation-exit-code results)
-               :out (render-report results (:format options))})))))))
+            (let [report-data (report (run-mutation-analysis options))]
+              {:exit (mutation-exit-code report-data)
+               :out (render-report report-data (:format options))})))))))
 
 (defn emit-result [{:keys [out err]}]
   (when err

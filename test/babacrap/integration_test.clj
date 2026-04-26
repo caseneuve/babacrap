@@ -6,9 +6,10 @@
             [babashka.fs :as fs]
             [babashka.process :as p]
             [cloverage.coverage :as cloverage]
+            [babacrap.util :as util]
             [clojure.edn :as edn]
             [clojure.string :as str]
-            [clojure.test :refer [deftest is testing]]
+            [clojure.test :as test :refer [deftest is testing]]
             [rewrite-clj.node :as n]
             [rewrite-clj.parser :as parser]))
 
@@ -178,6 +179,37 @@
     (is (= 3 (complexity/complexity* (parser/parse-string "(for [x xs :when p :while q] x)"))))
     (is (zero? (complexity/complexity* (parser/parse-string "(fn [x] (if x 1 2))"))))))
 
+(deftest util-merge-with-defaults-test
+  (testing "defaults win when a key's value is an empty vector"
+    (is (= {:a 1 :b [1]}
+           (util/merge-with-defaults {:a 1 :b [1]} {:b []}))))
+  (testing "non-empty values override defaults"
+    (is (= {:a 1 :b [2]}
+           (util/merge-with-defaults {:a 1 :b [1]} {:b [2]}))))
+  (testing "keys not in defaults pass through"
+    (is (= {:a 1 :c :extra}
+           (util/merge-with-defaults {:a 1} {:c :extra})))))
+
+(deftest capture-out-test
+  (testing "captures *out* and clojure.test/*test-out* and returns both"
+    (let [{:keys [result captured]}
+          (coverage/capture-out
+           (fn []
+             (println "regular")
+             (binding [test/*test-out* *out*] (println "from-test"))
+             42))]
+      (is (= 42 result))
+      (is (str/includes? captured "regular"))
+      (is (str/includes? captured "from-test"))))
+  (testing "rethrows and flushes captured buffer to *err*"
+    (let [err (java.io.StringWriter.)]
+      (binding [*err* err]
+        (try
+          (coverage/capture-out
+           (fn [] (println "before-throw") (throw (ex-info "boom" {}))))
+          (catch Exception _ nil)))
+      (is (str/includes? (str err) "before-throw")))))
+
 (deftest coverage-helper-test
   (testing "coverage file matching requires a path boundary"
     (is (coverage/file-matches? "demo/core.clj" "demo/core.clj" "test/fixtures/src/demo/core.clj"))
@@ -187,33 +219,69 @@
 (deftest mutation-rendering-test
   (let [mutant {:id 1 :filename "src/demo.clj" :row 5 :col 3
                 :mutator :replace-token :original "if" :replacement "if-not"
-                :function {:var 'demo/f}}]
+                :function {:var 'demo/f}}
+        report (fn [status]
+                 (mutation/report [(assoc mutant :status status)]))]
     (testing "output starts with a blank line to separate from prior output"
-      (is (str/starts-with? (mutation/format-text []) "\n")))
+      (is (str/starts-with? (mutation/format-text (mutation/report [])) "\n")))
     (testing "PASS header when nothing survived"
-      (let [out (mutation/format-text [(assoc mutant :status :killed)])
+      (let [out (mutation/format-text (report :killed))
             header (second (str/split-lines out))]
         (is (str/starts-with? header "Mutation analysis: PASS"))
         (is (str/includes? header "1 killed"))
         (is (str/includes? header "score 100.0%"))))
     (testing "FAIL header when mutants survived"
-      (let [out (mutation/format-text [(assoc mutant :status :survived)])
+      (let [out (mutation/format-text (report :survived))
             header (second (str/split-lines out))]
         (is (str/starts-with? header "Mutation analysis: FAIL"))
         (is (str/includes? header "1 survived"))))
     (testing "empty results render a PASS header"
-      (let [out (mutation/format-text [])]
+      (let [out (mutation/format-text (mutation/report []))]
         (is (str/includes? out "Mutation analysis: PASS"))
         (is (str/includes? out "no mutants"))))
     (testing "table carries each mutant's summary"
-      (let [out (mutation/format-text [(assoc mutant :status :survived)])
+      (let [out (mutation/format-text (report :survived))
             lines (str/split-lines out)]
         (is (some #(re-find #"(?i)ID\s+\|\s+STATUS\s+\|\s+LOCATION\s+\|\s+MUTATION" %) lines))
         (is (some #(and (str/includes? % "#1")
                         (str/includes? % "survived")
                         (str/includes? % "src/demo.clj:5:3")
                         (str/includes? % "\"if\" => \"if-not\""))
-                  lines))))))
+                  lines))))
+    (testing "mutation/report centralizes summarization"
+      (let [r (report :killed)]
+        (is (contains? r :summary))
+        (is (= 1 (get-in r [:summary :total])))
+        (is (= 1 (get-in r [:summary :killed])))))
+    (testing "mutation-exit-code reads from the report"
+      (is (zero? (mutation/mutation-exit-code (report :killed))))
+      (is (= 1 (mutation/mutation-exit-code (report :survived)))))))
+
+(deftest token-replacements-shape-test
+  (testing "token-replacements maps symbols to symbols"
+    (is (every? symbol? (keys mutation/token-replacements)))
+    (is (every? symbol? (vals mutation/token-replacements))))
+  (testing "render-replacement stringifies a replacement symbol as source text"
+    (is (= "false" (mutation/render-replacement 'false)))
+    (is (= "not=" (mutation/render-replacement 'not=)))))
+
+(deftest pure-file-analysis-test
+  (testing "complexity/analyze-forms is pure given parsed forms + filename"
+    (let [source "(ns demo.p)\n(defn f [x] (if x 1 0))\n"
+          forms (parser/parse-string-all source)
+          results (complexity/analyze-forms forms "demo/p.clj")]
+      (is (= 1 (count results)))
+      (is (= 2 (:complexity (first results))))
+      (is (= 'demo.p/f (:var (first results))))))
+  (testing "mutation/collect-file-mutants-from is pure given source + forms + functions"
+    (let [source "(ns demo.p)\n(defn f [x] (if x 1 0))\n"
+          forms (parser/parse-string-all source)
+          functions (complexity/analyze-forms forms "demo/p.clj")
+          mutants (mutation/collect-file-mutants-from
+                   {:filename "demo/p.clj" :source source :forms forms}
+                   functions)]
+      (is (pos? (count mutants)))
+      (is (every? :function mutants)))))
 
 (deftest mutation-helper-test
   (testing "mutation helpers reject non-matching inputs"
@@ -270,9 +338,9 @@
   (git dir "config" "user.name" "test")
   (git dir "commit" "-q" "--allow-empty" "-m" "init"))
 
-(deftest dirty-targets-test
-  (testing "dirty-targets reports only the files with uncommitted changes"
-    (let [dir (fs/create-temp-dir {:prefix "babacrap-dirty"})]
+(deftest git-status-test
+  (testing "git-status classifies files as :clean, :dirty, or :unknown"
+    (let [dir (fs/create-temp-dir {:prefix "babacrap-git-status"})]
       (try
         (init-repo! dir)
         (let [tracked (str (fs/path dir "a.clj"))
@@ -282,16 +350,24 @@
           (git dir "add" "a.clj" "b.clj")
           (git dir "commit" "-q" "-m" "seed")
           (spit tracked "(ns a)\n;; dirty\n")
-          (is (= #{tracked} (set (mutation/dirty-targets [tracked untouched]))))
-          (is (empty? (mutation/dirty-targets [untouched]))))
+          (is (= :dirty (mutation/git-status tracked)))
+          (is (= :clean (mutation/git-status untouched))))
         (finally (fs/delete-tree dir)))))
-  (testing "dirty-targets returns empty outside a git repo"
+  (testing "git-status returns :unknown outside a git repo"
     (let [dir (fs/create-temp-dir {:prefix "babacrap-nogit"})]
       (try
         (let [f (str (fs/path dir "a.clj"))]
           (spit f "(ns a)\n")
-          (is (empty? (mutation/dirty-targets [f]))))
+          (is (= :unknown (mutation/git-status f))))
         (finally (fs/delete-tree dir))))))
+
+(deftest dirty-targets-test
+  (testing "dirty-targets only keeps :dirty files; :clean and :unknown pass through"
+    (with-redefs [mutation/git-status {"dirty.clj" :dirty
+                                       "clean.clj" :clean
+                                       "unknown.clj" :unknown}]
+      (is (= ["dirty.clj"]
+             (mutation/dirty-targets ["dirty.clj" "clean.clj" "unknown.clj"]))))))
 
 (deftest mutation-run-restores-backups-before-collection-test
   (testing "CLI restores leftover backups before collecting mutants"

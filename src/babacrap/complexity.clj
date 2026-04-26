@@ -224,33 +224,37 @@
        (map str)
        sort))
 
+(defn analyze-forms
+  "Pure: extract complexity facts for every defn-like form in `forms-node`.
+  `filename` is only used to tag results and derive the resource path."
+  [forms-node filename]
+  (when-let [ns-sym (namespace-name forms-node)]
+    (let [resource-file (namespace->resource-path ns-sym filename)]
+      (vec
+       (for [form (children forms-node)
+             :when (and (= :list (n/tag form))
+                        (contains? defn-like-symbols
+                                   (some-> form children first token-value)))
+             arity (arities form)
+             :let [name-sym (some-> arity :name-node n/sexpr)
+                   location-node (:location-node arity)
+                   m (meta location-node)
+                   score (inc (complexity-of-children (:body arity)))]
+             :when name-sym]
+         {:ns ns-sym
+          :name name-sym
+          :var (symbol (str ns-sym) (str name-sym))
+          :arity-index (:arity-index arity)
+          :filename filename
+          :resource-file resource-file
+          :row (:row m)
+          :col (:col m)
+          :end-row (:end-row m)
+          :end-col (:end-col m)
+          :complexity score})))))
+
 (defn analyze-file [filename]
-  (let [forms-node (p/parse-file-all filename)
-        ns-sym (namespace-name forms-node)]
-    (when ns-sym
-      (let [resource-file (namespace->resource-path ns-sym filename)]
-        (vec
-         (for [form (children forms-node)
-               :when (and (= :list (n/tag form))
-                          (contains? defn-like-symbols
-                                     (some-> form children first token-value)))
-               arity (arities form)
-               :let [name-sym (some-> arity :name-node n/sexpr)
-                     location-node (:location-node arity)
-                     m (meta location-node)
-                     score (inc (complexity-of-children (:body arity)))]
-               :when name-sym]
-           {:ns ns-sym
-            :name name-sym
-            :var (symbol (str ns-sym) (str name-sym))
-            :arity-index (:arity-index arity)
-            :filename filename
-            :resource-file resource-file
-            :row (:row m)
-            :col (:col m)
-            :end-row (:end-row m)
-            :end-col (:end-col m)
-            :complexity score}))))))
+  (analyze-forms (p/parse-file-all filename) filename))
 
 (defn analyze-paths [paths]
   (mapcat analyze-file (source-files paths)))

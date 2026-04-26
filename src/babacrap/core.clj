@@ -3,6 +3,7 @@
   (:require [babacrap.complexity :as complexity]
             [babacrap.coverage :as coverage]
             [babacrap.table :as table]
+            [babacrap.util :as util]
             [clojure.pprint :as pprint]
             [clojure.string :as str]
             [clojure.tools.cli :as cli]))
@@ -45,8 +46,7 @@
    ["-h" "--help"]])
 
 (defn merge-defaults [opts]
-  (merge default-options
-         (into {} (remove (fn [[_ v]] (= [] v)) opts))))
+  (util/merge-with-defaults default-options opts))
 
 (defn crap-score [complexity coverage]
   ;; CRAP(m) = comp(m)^2 * (1 - cov(m))^3 + comp(m)

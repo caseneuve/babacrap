@@ -15,22 +15,37 @@
     (mapcat (fn [r] ["--ns-regex" r]) ns-regex)
     (mapcat (fn [r] ["--test-ns-regex" r]) test-ns-regex))))
 
+(defn- replay-to-err! [captured]
+  (binding [*out* *err*] (print captured) (flush)))
+
+(defn capture-out
+  "Run `f` with *out* and clojure.test/*test-out* redirected to a buffer.
+  On success, returns {:result :captured}. On exception, replays the
+  captured chatter to *err* before rethrowing so progress stays visible
+  when something goes wrong."
+  [f]
+  (let [sink (java.io.StringWriter.)]
+    (try
+      {:result (binding [*out* sink
+                         test/*test-out* sink]
+                 (f))
+       :captured (str sink)}
+      (catch Throwable t
+        (replay-to-err! (str sink))
+        (throw t)))))
+
 (defn run-cloverage! [opts]
-  ;; Cloverage prints via *out*; clojure.test prints via *test-out*. We
-  ;; capture both into a buffer so stdout stays reserved for our own result
-  ;; payload (`--format edn` must be parseable). On failure we replay the
-  ;; captured chatter to stderr so users can debug; on success we discard it.
+  ;; Cloverage prints via *out*; clojure.test prints via *test-out*. Capture
+  ;; both so stdout stays reserved for our own result payload (`--format edn`
+  ;; must be parseable). On any failure replay the captured chatter to stderr
+  ;; so users can debug; on success discard it.
   (let [args (cloverage-args opts)
-        sink (java.io.StringWriter.)
-        exit-code (binding [cloverage/*exit-after-test* false
-                            *out* sink
-                            test/*test-out* sink]
-                    (try (apply cloverage/-main args)
-                         (catch Throwable t
-                           (binding [*out* *err*] (print (str sink)) (flush))
-                           (throw t))))]
+        {exit-code :result
+         captured :captured} (capture-out
+                              #(binding [cloverage/*exit-after-test* false]
+                                 (apply cloverage/-main args)))]
     (when-not (zero? exit-code)
-      (binding [*out* *err*] (print (str sink)) (flush))
+      (replay-to-err! captured)
       (throw (ex-info "Cloverage failed" {:exit-code exit-code
                                           :args args})))
     (str (fs/path (:output opts) "raw-stats.clj"))))
