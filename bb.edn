@@ -19,6 +19,11 @@
    :requires ([babacrap.core])
    :task (apply babacrap.core/-main *command-line-args*)}
 
+  detangle
+  {:doc "Run deterministic decomplecting investigation"
+   :requires ([babacrap.detangle])
+   :task (apply babacrap.detangle/-main *command-line-args*)}
+
   mutate
   {:doc "Run mutation analysis"
    :requires ([babacrap.mutation])
