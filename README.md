@@ -123,13 +123,18 @@ For local babacrap development, use a local dependency instead:
 {:deps {babacrap/babacrap {:local/root "../babacrap"}}}
 ```
 
-Run:
+The task examples above provide safe project defaults, so from the target
+project you can run:
 
 ```sh
 bb crap
 bb mutate
 bb detangle
 ```
+
+When invoking babacrap directly, bare `bb crap` and bare `bb mutate` print help
+and exit without analyzing or mutating files. Pass explicit options, or define
+project tasks like the examples above.
 
 Example output:
 
@@ -171,12 +176,16 @@ only in `bb.edn` tasks.
 
 ## Run mutation analysis
 
+Bare `bb mutate` prints help and exits without collecting or applying mutants.
+Provide explicit options or define a project task with safe defaults.
+
 Useful options:
 
 ```sh
-bb mutate --limit 20
-bb mutate --timeout-ms 20000
-bb mutate --format edn
+bb mutate --src src --test-command 'bb test'
+bb mutate --src src --test-command 'bb test' --limit 20
+bb mutate --src src --test-command 'bb test' --timeout-ms 20000
+bb mutate --src src --test-command 'bb test' --format edn
 ```
 
 The mutation runner currently mutates files in place one mutant at a time,

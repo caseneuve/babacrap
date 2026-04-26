@@ -103,6 +103,13 @@
         (is (str/includes? err "boom-chatter"))))))
 
 (deftest crap-cli-run-test
+  (testing "CRAP CLI with no args prints help and does not analyze"
+    (with-redefs [babacrap/analyze (fn [_] (throw (ex-info "should not analyze" {})))]
+      (let [{:keys [exit out err]} (babacrap/run-result [])]
+        (is (zero? exit))
+        (is (str/includes? out "Usage:"))
+        (is (str/includes? out "--src"))
+        (is (nil? err)))))
   (testing "CRAP CLI run supports no-coverage mode"
     (is (zero? (:exit (babacrap/run-result ["--no-coverage"
                                             "--src" "test/fixtures/src"
@@ -339,6 +346,14 @@
                                       (mutation/emit-result {:err "oops"})))))))
 
 (deftest mutation-cli-run-test
+  (testing "mutation CLI with no args prints help and does not inspect or mutate files"
+    (with-redefs [mutation/collect-mutants (fn [_] (throw (ex-info "should not collect" {})))
+                  mutation/run-mutation-analysis (fn [_] (throw (ex-info "should not mutate" {})))]
+      (let [{:keys [exit out err]} (mutation/run-result [])]
+        (is (zero? exit))
+        (is (str/includes? out "Usage:"))
+        (is (str/includes? out "WARNING: mutates files in place"))
+        (is (nil? err)))))
   (testing "mutation CLI returns non-zero when mutants survive"
     (is (= 1 (:exit (mutation/run-result ["--src" "test/fixtures/src/demo/core.clj"
                                           "--test-command" fixture-test-command

@@ -151,7 +151,7 @@
   (let [{:keys [options errors summary]} (cli/parse-opts args cli-options)
         options (merge-defaults options)]
     (cond
-      (:help options)
+      (or (:help options) (empty? args))
       {:exit 0
        :out (usage summary)}
 
