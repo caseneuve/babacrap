@@ -221,6 +221,9 @@ Current rules look for:
 Text output is intended for humans. EDN output is intended for agents, editor
 integrations, or follow-up tooling.
 
+Agents can also use the bundled `hickey` skill in `skills/hickey/` for a guided
+Simple Made Easy / decomplecting workflow around `bb detangle`.
+
 ## Use only the clj-kondo complexity linter
 
 After adding babacrap as a dependency, copy exported clj-kondo configs:
