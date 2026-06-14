@@ -246,9 +246,9 @@
     summary
     ""
     "Examples:"
-    "  bb mutate --src src --test-command 'bb test'"
-    "  bb mutate --src src --limit 10 --format edn"
-    "  babacrap mutate --src src --test-command 'bb test'"]))
+    "  babacrap mutate --src src --test-command 'bb test'"
+    "  babacrap mutate --src src --limit 10 --format edn"
+    "  babacrap mutate --src src --timeout-ms 20000"]))
 
 (defn error-text [errors summary]
   (str/join \newline (concat errors ["" (usage summary)])))
