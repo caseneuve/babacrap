@@ -4,6 +4,7 @@
          :git/sha "61e3cac426e9907a9dd01c37597f85c71a57ff90"
          :deps/root "cloverage"}
         rewrite-clj/rewrite-clj {:mvn/version "1.1.49"}}
+ :bbin/bin {babacrap {:main-opts ["-m" "babacrap.cli"]}}
  :tasks
  {test
   {:doc "Run tests"

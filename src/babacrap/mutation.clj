@@ -241,7 +241,12 @@
     "Usage: bb -m babacrap.mutation [options]"
     ""
     "Options:"
-    summary]))
+    summary
+    ""
+    "Examples:"
+    "  bb mutate --src src --test-command 'bb test'"
+    "  bb mutate --src src --limit 10 --format edn"
+    "  babacrap mutate --src src --test-command 'bb test'"]))
 
 (defn error-text [errors summary]
   (str/join \newline (concat errors ["" (usage summary)])))

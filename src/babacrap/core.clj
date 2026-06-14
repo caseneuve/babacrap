@@ -111,7 +111,12 @@
     "Usage: bb -m babacrap.core [options]"
     ""
     "Options:"
-    summary]))
+    summary
+    ""
+    "Examples:"
+    "  bb crap --src src --test test --ns-regex 'my-app.*'"
+    "  bb crap --no-coverage --src src --format edn"
+    "  babacrap crap --src src --test test"]))
 
 (defn error-text [errors summary]
   (str/join

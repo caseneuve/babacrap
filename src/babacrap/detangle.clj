@@ -452,7 +452,12 @@
     "Usage: bb detangle [options]"
     ""
     "Options:"
-    (cli/format-opts {:spec cli-spec :order cli-order})]))
+    (cli/format-opts {:spec cli-spec :order cli-order})
+    ""
+    "Examples:"
+    "  bb detangle --src src"
+    "  bb detangle --src src --format edn"
+    "  babacrap detangle --src src --format edn"]))
 
 (defn error-text [errors]
   (str/join \newline (concat (map :msg errors) ["" (usage)])))
