@@ -238,7 +238,9 @@
     "WARNING: mutates files in place while each mutant runs, then restores them."
     "Do not interrupt the process. Use git to verify your worktree afterwards."
     ""
-    "Usage: bb -m babacrap.mutation [options]"
+    "Usage: babacrap mutate [options]"
+    "       bb mutate [options]"
+    "       bb -m babacrap.mutation [options]"
     ""
     "Options:"
     summary

@@ -3,7 +3,6 @@
             [babacrap.detangle :as detangle]
             [babacrap.mutation :as mutation]
             [babacrap.util :as util]
-            [babashka.cli :as cli]
             [clojure.string :as str]))
 
 ;; -- Pure --
@@ -35,11 +34,10 @@
 (defn help-arg? [arg]
   (contains? #{"-h" "--help"} arg))
 
-(defn top-level-help? [args cmds]
+(defn top-level-help? [args]
   (or (empty? args)
-      (= ["help"] (vec cmds))
-      (and (empty? cmds)
-           (= 1 (count args))
+      (= ["help"] (vec args))
+      (and (= 1 (count args))
            (help-arg? (first args)))))
 
 (defn unknown-text [cmd]
@@ -52,19 +50,15 @@
     "detangle" (detangle/run-result args)))
 
 (defn run-result [args]
-  (let [{:keys [cmds] subcommand-args :args} (cli/parse-cmds args)]
-    (cond
-      (top-level-help? args cmds)
-      {:exit 0 :out (usage)}
+  (cond
+    (top-level-help? args)
+    {:exit 0 :out (usage)}
 
-      (empty? cmds)
-      {:exit 2 :err (str "Expected subcommand." \newline \newline (usage))}
-
-      :else
-      (let [cmd (name (first cmds))]
-        (if (contains? subcommands cmd)
-          (run-subcommand cmd (vec subcommand-args))
-          {:exit 2 :err (unknown-text cmd)})))))
+    :else
+    (let [cmd (first args)]
+      (if (contains? subcommands cmd)
+        (run-subcommand cmd (vec (rest args)))
+        {:exit 2 :err (unknown-text cmd)}))))
 
 ;; -- Side effects --
 

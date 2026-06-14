@@ -449,7 +449,8 @@
    \newline
    ["babacrap detangle: deterministic decomplecting investigation signals"
     ""
-    "Usage: bb detangle [options]"
+    "Usage: babacrap detangle [options]"
+    "       bb detangle [options]"
     ""
     "Options:"
     (cli/format-opts {:spec cli-spec :order cli-order})

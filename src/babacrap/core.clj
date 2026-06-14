@@ -108,7 +108,9 @@
    \newline
    ["babacrap: CRAP analysis for babashka/Clojure projects"
     ""
-    "Usage: bb -m babacrap.core [options]"
+    "Usage: babacrap crap [options]"
+    "       bb crap [options]"
+    "       bb -m babacrap.core [options]"
     ""
     "Options:"
     summary
