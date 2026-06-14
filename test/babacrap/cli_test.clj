@@ -38,6 +38,8 @@
                   detangle/run-result (fn [args] {:exit 0 :out (pr-str [:detangle args])})]
       (is (= "[:crap [\"--format\" \"edn\"]]"
              (:out (cli/run-result ["crap" "--format" "edn"]))))
+      (is (= "[:crap [\"pos\" \"--format\" \"edn\"]]"
+             (:out (cli/run-result ["crap" "pos" "--format" "edn"]))))
       (is (= "[:mutate [\"--limit\" \"1\"]]"
              (:out (cli/run-result ["mutate" "--limit" "1"]))))
       (is (= "[:detangle [\"--src\" \"test/fixtures/src\" \"--format\" \"edn\"]]"
@@ -48,14 +50,15 @@
              (cli/run-result ["detangle" "--format" "json"]))))))
 
 (deftest subcommand-help-test
-  (testing "subcommand help includes examples and does not analyze"
+  (testing "subcommand help includes examples and installed usage, and does not analyze"
     (with-redefs [crap/analyze (fn [_] (throw (ex-info "should not analyze" {})))
                   mutation/collect-mutants (fn [_] (throw (ex-info "should not mutate" {})))
                   detangle/analyze-paths (fn [_] (throw (ex-info "should not detangle" {})))]
-      (doseq [args [["crap" "--help"]
-                    ["mutate" "--help"]
-                    ["detangle" "--help"]]]
+      (doseq [[args usage] [[["crap" "--help"] "Usage: babacrap crap [options]"]
+                            [["mutate" "--help"] "Usage: babacrap mutate [options]"]
+                            [["detangle" "--help"] "Usage: babacrap detangle [options]"]]]
         (let [{:keys [exit out err]} (cli/run-result args)]
           (is (zero? exit))
+          (is (str/includes? out usage))
           (is (str/includes? out "Examples:"))
           (is (nil? err)))))))
