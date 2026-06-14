@@ -37,23 +37,23 @@ coverage appear together.
 
 Rules of thumb:
 
-| CRAP score | Interpretation |
-|---:|---|
-| `1–10` | Usually fine |
-| `10–20` | Worth a look |
-| `20–30` | Risky; add tests or simplify |
-| `>30` | CRAPpy; treat as a quality gate failure |
-| `>50` | Strong warning |
-| `>100` | Dangerous hotspot |
+| CRAP score | Interpretation                          |
+|-----------:|-----------------------------------------|
+|     `1–10` | Usually fine                            |
+|    `10–20` | Worth a look                            |
+|    `20–30` | Risky; add tests or simplify            |
+|      `>30` | CRAPpy; treat as a quality gate failure |
+|      `>50` | Strong warning                          |
+|     `>100` | Dangerous hotspot                       |
 
 Examples:
 
-| Complexity | Coverage | CRAP | Meaning |
-|---:|---:|---:|---|
-| `1` | `0%` | `2` | Trivial and untested; usually low risk |
-| `10` | `100%` | `10` | Complex but covered |
-| `10` | `50%` | `22.5` | Risky; tests or refactoring needed |
-| `10` | `0%` | `110` | High-risk hotspot |
+| Complexity | Coverage |   CRAP | Meaning                                |
+|-----------:|---------:|-------:|----------------------------------------|
+|        `1` |     `0%` |    `2` | Trivial and untested; usually low risk |
+|       `10` |   `100%` |   `10` | Complex but covered                    |
+|       `10` |    `50%` | `22.5` | Risky; tests or refactoring needed     |
+|       `10` |     `0%` |  `110` | High-risk hotspot                      |
 
 When a score is high, improve it by adding tests for uncovered branches,
 reducing cyclomatic complexity, or both. Babacrap's default examples use a
@@ -140,11 +140,11 @@ Example output:
 
 ```text
 CRAP analysis: FAIL — 1/3 over threshold 10.00
-  CRAP | COMPLEX |    COVERAGE | LOCATION
--------+---------+-------------+---------------------------------------------
- 16.31 |       7 | 42.9% (12/28) | src/my/project/foo.clj:10 my.project.foo/complicated
-  5.20 |       3 | 66.7% (4/6)   | src/my/project/foo.clj:22 my.project.foo/ok
-  2.03 |       2 | 80.0% (4/5)   | src/my/project/foo.clj:3  my.project.foo/simple
+  CRAP   | COMPLEX |    COVERAGE   | LOCATION
+---------+---------+---------------+---------------------------------------------
+ 16.31   |       7 | 42.9% (12/28) | src/my/project/foo.clj:10 my.project.foo/complicated
+  5.20   |       3 | 66.7% (4/6)   | src/my/project/foo.clj:22 my.project.foo/ok
+  2.03   |       2 | 80.0% (4/5)   | src/my/project/foo.clj:3  my.project.foo/simple
 ```
 
 The header is `PASS` / `FAIL` relative to `--crap-threshold` and reports
