@@ -450,7 +450,6 @@
    ["babacrap detangle: deterministic decomplecting investigation signals"
     ""
     "Usage: babacrap detangle [options]"
-    "       bb detangle [options]"
     ""
     "Options:"
     (cli/format-opts {:spec cli-spec :order cli-order})

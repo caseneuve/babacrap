@@ -239,8 +239,6 @@
     "Do not interrupt the process. Use git to verify your worktree afterwards."
     ""
     "Usage: babacrap mutate [options]"
-    "       bb mutate [options]"
-    "       bb -m babacrap.mutation [options]"
     ""
     "Options:"
     summary

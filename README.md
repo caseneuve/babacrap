@@ -164,9 +164,9 @@ bb mutate
 bb detangle
 ```
 
-When invoking babacrap directly, bare `bb crap`, bare `bb mutate`, and bare
-`bb detangle` print help and exit without analyzing or mutating files. Pass
-explicit options, or define project tasks like the examples above.
+When invoking babacrap directly, bare `babacrap crap`, bare `babacrap mutate`,
+and bare `babacrap detangle` print help and exit without analyzing or mutating
+files. Pass explicit options, or define project tasks like the examples above.
 
 Example output:
 
@@ -185,9 +185,9 @@ The header is `PASS` / `FAIL` relative to `--crap-threshold` and reports
 Useful options:
 
 ```sh
-bb crap --crap-threshold 30
-bb crap --format edn
-bb crap --no-coverage          # complexity-only, assumes 0% coverage
+babacrap crap --crap-threshold 30
+babacrap crap --format edn
+babacrap crap --no-coverage          # complexity-only, assumes 0% coverage
 ```
 
 The command writes Cloverage raw data under the configured `--output` directory
@@ -208,16 +208,16 @@ only in `bb.edn` tasks.
 
 ## Run mutation analysis
 
-Bare `bb mutate` prints help and exits without collecting or applying mutants.
-Provide explicit options or define a project task with safe defaults.
+Bare `babacrap mutate` prints help and exits without collecting or applying
+mutants. Provide explicit options or define a project task with safe defaults.
 
 Useful options:
 
 ```sh
-bb mutate --src src --test-command 'bb test'
-bb mutate --src src --test-command 'bb test' --limit 20
-bb mutate --src src --test-command 'bb test' --timeout-ms 20000
-bb mutate --src src --test-command 'bb test' --format edn
+babacrap mutate --src src --test-command 'bb test'
+babacrap mutate --src src --test-command 'bb test' --limit 20
+babacrap mutate --src src --test-command 'bb test' --timeout-ms 20000
+babacrap mutate --src src --test-command 'bb test' --format edn
 ```
 
 The mutation runner currently mutates files in place one mutant at a time,
@@ -243,14 +243,14 @@ to be a complete design review. It parses local source files and emits
 evidence-backed questions about code shapes that often mix independently
 varying concerns.
 
-Bare `bb detangle` prints help and exits without analyzing files. Provide
+Bare `babacrap detangle` prints help and exits without analyzing files. Provide
 explicit options or define a project task with safe defaults.
 
 Useful options:
 
 ```sh
-bb detangle --src src
-bb detangle --src src --format edn
+babacrap detangle --src src
+babacrap detangle --src src --format edn
 ```
 
 Current rules look for:
@@ -269,7 +269,7 @@ Agents can use bundled project skills for repeatable workflows:
 
 - `skills/crap/` — run and interpret CRAP analysis.
 - `skills/mutate/` — run mutation analysis safely.
-- `skills/hickey/` — guide Simple Made Easy / decomplecting reviews around `bb detangle`.
+- `skills/hickey/` — guide Simple Made Easy / decomplecting reviews around `babacrap detangle`.
 
 ## Use only the clj-kondo complexity linter
 
