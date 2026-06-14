@@ -207,17 +207,38 @@ bb mutate --src src --test-command 'bb -cp src:resources:test:test/fixtures/src:
 
 ## Commit message style
 
-Use conventional type prefixes:
+Use commit prefixes based on context:
 
-```text
-[type] one-line summary
-```
+- **Development/checkpoint commits on feature branches** should help reviewers follow the work. Use TDD flow markers when applicable:
 
-Common types: `feat`, `fix`, `refactor`, `test`, `docs`, `chore`.
+  ```text
+  [red] characterize current behavior
+  [green] implement minimal fix
+  [refactor] simplify after green
+  ```
 
-Examples:
+- **Larger todos with subtasks** should include the subtask ID and flow marker:
 
-```text
-[chore] add dry duplicate scan task
-[fix] restore mutation backups on startup
-```
+  ```text
+  [1.1 red] characterize dispatcher help
+  [1.1 green] add dispatcher help
+  [1.2 refactor] extract shared option specs
+  ```
+
+- **Squash commits for todo/work-item branches** should reference the todo ID and category:
+
+  ```text
+  [feat(0001)] add bbin installable cli
+  [refactor(0003)] prepare cli fcis dry cleanup
+  [fix(0007)] restore mutation backups on startup
+  ```
+
+- **Direct commits on `master` without a todo/work item** should use only a category:
+
+  ```text
+  [docs] update dogfood guidance
+  [chore] ignore classpath cache
+  [test] cover mutation dirty targets
+  ```
+
+Use a concise imperative/lowercase summary and omit a trailing period.
