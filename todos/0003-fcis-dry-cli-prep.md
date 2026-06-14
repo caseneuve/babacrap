@@ -32,6 +32,8 @@ Doing this before `0001-bbin-installable-cli.md` should reduce churn when adding
 - [ ] `function-label` is extracted only if the shared helper matches both CRAP and detangle report semantics.
 - [ ] Do not extract `run-result`, `run`, or `-main` unless the resulting code is simpler and tests prove exit/stdout/stderr behavior is unchanged.
 - [ ] `src/babacrap/core.clj`, `src/babacrap/mutation.clj`, and `src/babacrap/detangle.clj` have clear FCIS section markers, in this order where applicable: `;; -- Pure --`, `;; -- Side effects --`, and `;; -- CLI entry point --`.
+- [ ] Existing code is reviewed for FCIS compliance, not only rearranged: identify functions that mix transformation with I/O/process/env/filesystem concerns and either separate them when small/safe or document follow-up work when separation would be too broad for this todo.
+- [ ] Pure helpers are positioned before side-effecting orchestration in each touched namespace, and side-effecting functions delegate to pure helpers rather than mixing I/O with transformation logic where practical.
 - [ ] Existing functions are moved only enough to make FCIS boundaries clear; avoid broad rewrites.
 - [ ] No user-visible CLI behavior changes are introduced.
 - [ ] Existing `bb crap`, `bb mutate`, and `bb detangle` tasks retain current behavior.

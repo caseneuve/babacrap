@@ -30,6 +30,8 @@ Established direction:
 ## Acceptance Criteria
 
 - [ ] `src/babacrap/cli.clj` or equivalent top-level entrypoint exists and dispatches `babacrap crap`, `babacrap mutate`, and `babacrap detangle` to the existing command implementations.
+- [ ] The new top-level dispatcher uses idiomatic `babashka.cli` facilities where appropriate, after checking `/home/piotr/git/external/babashka.cli/`.
+- [ ] The implementation does not hand-roll subcommand parsing beyond the minimal glue needed to preserve existing command behavior.
 - [ ] Top-level `babacrap`, `babacrap -h`, and `babacrap --help` print help, include available subcommands, and exit successfully without analyzing or mutating files.
 - [ ] Each subcommand supports `-h` / `--help`, exits successfully, includes command-specific explanation plus examples, and performs no analysis or mutation in help mode.
 - [ ] Unknown subcommands produce a clear diagnostic, include top-level usage, and exit non-zero.
