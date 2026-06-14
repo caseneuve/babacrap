@@ -2,26 +2,29 @@
   (:gen-class)
   (:require [babacrap.complexity :as complexity]
             [babacrap.table :as table]
-            [babacrap.util :as util]
+            [babashka.cli :as cli]
             [clojure.pprint :as pprint]
             [clojure.string :as str]
-            [clojure.tools.cli :as cli]
             [rewrite-clj.node :as n]
             [rewrite-clj.parser :as p]))
 
-(def default-options
-  {:src-paths ["src"]
-   :format :text})
+(def cli-spec
+  {:src    {:desc    "Source directory or file; can be repeated."
+            :alias   :p
+            :coerce  []
+            :default ["src"]
+            :ref     "<path>"}
+   :format {:desc     "Output format: text or edn."
+            :coerce   :keyword
+            :default  :text
+            :ref      "<format>"
+            :validate {:pred #{:text :edn}
+                       :ex-msg (fn [_] "Must be text or edn")}}
+   :help   {:desc  "Print this help and exit."
+            :alias :h
+            :coerce :boolean}})
 
-(def cli-options
-  [["-p" "--src PATH" "Source directory or file; can be repeated"
-    :id :src-paths
-    :default []
-    :assoc-fn (fn [m k v] (update m k conj v))]
-   [nil "--format FORMAT" "Output format: text or edn"
-    :parse-fn keyword
-    :validate [#{:text :edn} "Must be text or edn"]]
-   ["-h" "--help"]])
+(def cli-order [:src :format :help])
 
 (def hidden-context-calls
   '#{System/currentTimeMillis
@@ -471,7 +474,7 @@
     :edn (render-edn report-data)
     :text (format-text report-data)))
 
-(defn usage [summary]
+(defn usage []
   (str/join
    \newline
    ["babacrap detangle: deterministic decomplecting investigation signals"
@@ -479,30 +482,34 @@
     "Usage: bb detangle [options]"
     ""
     "Options:"
-    summary]))
+    (cli/format-opts {:spec cli-spec :order cli-order})]))
 
-(defn error-text [errors summary]
-  (str/join \newline (concat errors ["" (usage summary)])))
+(defn error-text [errors]
+  (str/join \newline (concat (map :msg errors) ["" (usage)])))
 
-(defn merge-defaults [opts]
-  (util/merge-with-defaults default-options opts))
+(defn parse-args [args]
+  (let [errors (volatile! [])
+        opts (cli/parse-opts args
+                             {:spec cli-spec
+                              :restrict true
+                              :error-fn #(vswap! errors conj %)})]
+    {:opts opts :errors @errors}))
 
 (defn run-result [args]
-  (let [{:keys [options errors summary]} (cli/parse-opts args cli-options)
-        options (merge-defaults options)]
+  (let [{:keys [opts errors]} (parse-args args)]
     (cond
-      (:help options)
+      (or (:help opts) (empty? args))
       {:exit 0
-       :out (usage summary)}
+       :out (usage)}
 
       (seq errors)
       {:exit 2
-       :err (error-text errors summary)}
+       :err (error-text errors)}
 
       :else
-      (let [report-data (report (analyze-paths (:src-paths options)))]
+      (let [report-data (report (analyze-paths (:src opts)))]
         {:exit 0
-         :out (render-report report-data (:format options))}))))
+         :out (render-report report-data (:format opts))}))))
 
 (defn emit-result [{:keys [out err]}]
   (when err

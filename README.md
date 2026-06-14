@@ -132,9 +132,9 @@ bb mutate
 bb detangle
 ```
 
-When invoking babacrap directly, bare `bb crap` and bare `bb mutate` print help
-and exit without analyzing or mutating files. Pass explicit options, or define
-project tasks like the examples above.
+When invoking babacrap directly, bare `bb crap`, bare `bb mutate`, and bare
+`bb detangle` print help and exit without analyzing or mutating files. Pass
+explicit options, or define project tasks like the examples above.
 
 Example output:
 
@@ -210,6 +210,9 @@ Current mutators include:
 to be a complete design review. It parses local source files and emits
 evidence-backed questions about code shapes that often mix independently
 varying concerns.
+
+Bare `bb detangle` prints help and exits without analyzing files. Provide
+explicit options or define a project task with safe defaults.
 
 Useful options:
 

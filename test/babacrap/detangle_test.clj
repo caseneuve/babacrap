@@ -77,6 +77,14 @@
              (:evidence explicit-deref))))))
 
 (deftest detangle-reporting-test
+  (testing "detangle CLI with no args prints help and does not analyze"
+    (with-redefs [detangle/analyze-paths (fn [_] (throw (ex-info "should not analyze" {})))]
+      (let [{:keys [exit out err]} (detangle/run-result [])]
+        (is (zero? exit))
+        (is (str/includes? out "Usage:"))
+        (is (str/includes? out "--src"))
+        (is (nil? err)))))
+
   (testing "EDN output is parseable and summarizes findings"
     (let [{:keys [exit out]} (detangle/run-result ["--src" fixture-src "--format" "edn"])
           parsed (edn/read-string out)]
