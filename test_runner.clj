@@ -5,7 +5,8 @@
 
 (def test-namespaces
   '[babacrap.integration-test
-    babacrap.detangle-test])
+    babacrap.detangle-test
+    babacrap.cli-test])
 
 (doseq [ns-sym test-namespaces]
   (require ns-sym))
