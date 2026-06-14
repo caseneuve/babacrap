@@ -61,6 +61,105 @@ Note: Cloverage babashka support is in the git checkout tested during this work.
 - `test/corpus/` — clj-kondo hook test corpus.
 - `test/fixtures/` — small namespaced project for end-to-end CRAP tests.
 
+## Development rules
+
+## Stack / dependency policy
+
+- Babashka-first Clojure project. Prefer libraries already available through `bb` or existing project deps.
+- Do not add new dependencies, new namespaces, new protocols, or substantially new execution strategies without asking first.
+- For CLI parsing, filesystem work, and process execution, prefer `babashka.cli`, `babashka.fs`, and `babashka.process` idioms over hand-rolled code.
+
+## Test discipline
+
+- Use TDD for behavior changes: write the failing test first (RED), implement the minimal fix (GREEN), then refactor.
+- Run focused checks during edits, then run the full required checks before handing off.
+- `bb test` and `bb lint` must pass before review / handoff.
+- Move tests with code when extracting or relocating behavior.
+
+## MUST
+
+- **TDD.** RED → GREEN → refactor for non-trivial behavior changes.
+- **FCIS.** Keep a functional core and imperative shell. Pure functions take all inputs as arguments and do not read env, slurp files, or shell out. Side-effecting functions orchestrate I/O and call pure helpers.
+- **DRY.** Keep one source of truth per concern. Search existing namespaces before adding helpers.
+- **YAGNI.** Do not add abstractions before a second caller or clear need exists.
+- **KISS.** Prefer the simplest solution satisfying the requirement.
+- **Use babashka idioms.** Do not hand-roll behavior provided by `babashka.cli`, `babashka.fs`, or `babashka.process`.
+- **Peer review before merge.** Larger changes should be reviewed by another agent via the comms channel before merge.
+- **Ask before:** new dependencies, new namespaces, new protocols, new execution strategies, public CLI/schema changes, or broad rewrites.
+
+## MUST NOT
+
+- **Push without explicit permission.**
+- **Write tests after implementation** for non-trivial behavior changes.
+- **Hand-roll CLI parsing loops.** Use `babashka.cli/parse-opts` / `dispatch` when changing CLI parsing.
+- **Use `java.io.File` / `(.exists …)` / `java.io.File/createTempFile` for new filesystem code.** Use `babashka.fs`.
+- **Shell out to `which`.** Use `babashka.fs/which`.
+- **Add verbose docstrings or narrative comments.** Prefer semantic naming; comments explain why, not what.
+- **Introduce mutually-exclusive boolean flag groups.** Prefer a single enum-valued option.
+- **Mix pure and impure code in one function.** Inject I/O results into pure helpers.
+
+## Canonical dev flow
+
+Anything bigger than a quick single-commit fix should follow this flow:
+
+1. Create or identify a todo/work item when appropriate.
+2. Branch with a short descriptive name; use a worktree for large stories.
+3. Develop with TDD: RED → GREEN → refactor, using checkpoint commits as useful.
+4. Run `bb test` and `bb lint`.
+5. Request peer review via an inter-agent channel for larger changes.
+6. Address findings in new commits; do not amend after review unless explicitly agreed.
+7. Wait for human approval before push/merge when the user has not explicitly delegated it.
+
+Direct-to-master is acceptable only for genuine quick fixes with no meaningful behavior change.
+
+## Babashka idioms
+
+Reference local external docs before inventing new patterns:
+
+- `../external/babashka.cli/README.md` and `API.md` — use `parse-opts` with `:spec`, `:coerce`, `:validate`, `:require`, `:alias`; use `dispatch` for subcommands and `format-opts` for help.
+- `../external/babashka.fs/README.md` and `API.md` — use `fs/path`, `fs/exists?`, `fs/which`, `fs/glob`, temp-dir/file helpers, `copy-tree`, `delete-tree`.
+- `../external/babashka.process/README.md` and `API.md` — use `process`, `shell`, `destroy-tree`, `:continue true`, I/O redirection, and timeouts/shutdown handling as appropriate.
+
+## FCIS namespace shape
+
+Prefer this organization when adding or substantially changing namespaces:
+
+```clojure
+(ns babacrap.example
+  (:require ...))
+
+;; -- Pure --
+
+(defn parse-input [x] ...)
+(defn build-plan [opts] ...)
+
+;; -- Side effects --
+
+(defn run! [opts] ...)
+
+;; -- CLI entry point --
+
+(defn -main [& args] ...)
+```
+
+Unit tests should target pure helpers; integration tests should cover side-effecting flows and CLI behavior.
+
+## Git rules
+
+- Never `git push` without explicit permission.
+- Never `git commit --amend` on a pushed branch.
+- Prefer rebase over merge for local history tidying; only before review / sharing.
+- Verify `git status` after mutation runs because mutation edits files in place before restoring them.
+
+## Review protocol
+
+Implementation of larger work is not complete until another agent has reviewed it.
+
+1. Implementer announces a `review-request` with branch, commit range, todo/work item if any, summary, and test results.
+2. Reviewer acks, runs relevant checks, reviews the diff, checks babashka idioms and FCIS boundaries, then replies with `APPROVED` or `CHANGES-REQUESTED` and concrete findings.
+3. Implementer addresses findings in new commits and re-requests review if scope warrants.
+4. Both sides use `OVER` until review is concluded; use `OUT` only after approval is acknowledged.
+
 ## Commands
 
 Run before handing off changes:
