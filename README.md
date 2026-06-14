@@ -74,6 +74,38 @@ bodies are not charged to the outer function.
 
 This is intentionally a practical lint metric, not a full control-flow graph.
 
+## Install as a CLI
+
+Install the `babacrap` command with bbin:
+
+```sh
+bbin install io.github.caseneuve/babacrap
+```
+
+Then run subcommands through the installed dispatcher:
+
+```sh
+babacrap crap --src src --test test
+babacrap mutate --src src --test-command 'bb test'
+babacrap detangle --src src --format edn
+```
+
+For bleeding-edge installs from the latest GitHub SHA, use:
+
+```sh
+bbin install io.github.caseneuve/babacrap --latest-sha
+```
+
+For local development, avoid overwriting a real user install. Install the
+checkout under a dev-only name:
+
+```sh
+bbin install . --as babacrap-dev
+```
+
+Then smoke-test with `babacrap-dev --help` and command-specific help such as
+`babacrap-dev crap --help`.
+
 ## Use from another babashka project
 
 Add babacrap as a GitHub dependency in the target project's `bb.edn`:

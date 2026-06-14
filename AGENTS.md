@@ -148,6 +148,7 @@ Unit tests should target pure helpers; integration tests should cover side-effec
 ## Git rules
 
 - Never `git push` without explicit permission.
+- Never install a development checkout with bbin as `babacrap`; use `bbin install . --as babacrap-dev`.
 - Never `git commit --amend` on a pushed branch.
 - Prefer rebase over merge for local history tidying; only before review / sharing.
 - Verify `git status` after mutation runs because mutation edits files in place before restoring them.
