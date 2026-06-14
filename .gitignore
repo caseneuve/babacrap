@@ -1,5 +1,8 @@
-.clj-kondo/.cache/
-.cache/
-.lsp/
-target/
 *.babacrap.bak
+.cache/
+.clj-kondo
+.clj-kondo/.cache/
+.cpcache/
+.lsp/
+.reviews/
+target/

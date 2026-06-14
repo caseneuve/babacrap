@@ -197,6 +197,14 @@
     (is (= {:a 1 :c :extra}
            (util/merge-with-defaults {:a 1} {:c :extra})))))
 
+(deftest util-cli-output-test
+  (testing "render-edn trims pprint's trailing newline"
+    (is (= "{:a 1}" (util/render-edn {:a 1}))))
+  (testing "emit-result writes to the requested stream"
+    (is (= "hello\n" (with-out-str (util/emit-result {:out "hello"}))))
+    (is (= "oops\n" (with-out-str (binding [*err* *out*]
+                                      (util/emit-result {:err "oops"})))))))
+
 (deftest capture-out-test
   (testing "success returns {:ok :captured}"
     (let [{:keys [ok error captured]}
@@ -418,6 +426,30 @@
           (is (= original (slurp src)))
           (is (not (fs/exists? backup))))
         (finally (fs/delete-tree dir))))))
+
+(deftest mutation-run-collects-mutants-once-test
+  (testing "normal CLI run reuses collected mutants for dirty-target detection and execution"
+    (let [calls (atom 0)
+          mutants [{:id 1
+                    :filename "src/foo.clj"
+                    :row 1
+                    :col 1
+                    :mutator :replace-token
+                    :original "x"
+                    :replacement "y"
+                    :status :killed
+                    :function {:var 'src/foo}}]]
+      (with-redefs [mutation/collect-mutants (fn [_]
+                                               (swap! calls inc)
+                                               mutants)
+                    mutation/dirty-targets (fn [_] [])
+                    mutation/run-mutant! (fn [_ mutant] (assoc mutant :status :killed))]
+        (let [{:keys [exit out]} (mutation/run-result ["--src" "src/foo.clj"
+                                                       "--test-command" "true"
+                                                       "--format" "edn"])]
+          (is (zero? exit))
+          (is (str/includes? out ":killed"))
+          (is (= 1 @calls)))))))
 
 (deftest mutation-refuses-dirty-targets-test
   (testing "mutation CLI exits 3 and does not run when targets are dirty"

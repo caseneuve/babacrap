@@ -13,6 +13,10 @@
   {:doc "Lint this project and the sample corpus"
    :task (shell "clj-kondo --lint src resources test bb.edn test_runner.clj --cache false")}
 
+  dry
+  {:doc "Find duplicate Clojure code candidates in implementation and tests"
+   :task (apply shell "clj" "-M:dry4clj" (if (seq *command-line-args*) *command-line-args* ["src" "test/babacrap"]))}
+
   crap
   {:doc "Run CRAP analysis"
    :requires ([babacrap.core])

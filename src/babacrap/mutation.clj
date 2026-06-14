@@ -1,15 +1,15 @@
 (ns babacrap.mutation
   (:gen-class)
   (:require [babacrap.complexity :as complexity]
-            [babacrap.table :as table]
             [babacrap.util :as util]
             [babashka.fs :as fs]
             [babashka.process :as process]
-            [clojure.pprint :as pprint]
             [clojure.string :as str]
             [clojure.tools.cli :as cli]
             [rewrite-clj.node :as n]
             [rewrite-clj.parser :as p]))
+
+;; -- Pure --
 
 (def default-options
   {:src-paths ["src"]
@@ -161,14 +161,6 @@
 (defn with-ids [mutants]
   (map-indexed (fn [idx m] (assoc m :id (inc idx))) mutants))
 
-(defn parse-file
-  "IO: read `filename` once and return a map with its source text and
-  parsed forms, ready to feed into pure analysis."
-  [filename]
-  {:filename filename
-   :source (slurp filename)
-   :forms (p/parse-file-all filename)})
-
 (defn collect-file-mutants-from
   "Pure: given a parsed file and a function inventory, return the valid
   mutants for that file."
@@ -177,6 +169,106 @@
     (->> (collect* source line-starts filename functions forms)
          (remove nil?)
          (filter :function))))
+
+(defn apply-mutant [source {:keys [start end replacement]}]
+  (str (subs source 0 start)
+       replacement
+       (subs source end)))
+
+(defn selected-mutants [opts mutants]
+  (cond->> mutants
+    (:limit opts) (take (:limit opts))))
+
+(defn summarize [results]
+  (let [freqs (frequencies (map :status results))
+        total (count results)
+        killed (get freqs :killed 0)
+        timed-out (get freqs :timeout 0)
+        survived (get freqs :survived 0)]
+    {:total total
+     :killed killed
+     :survived survived
+     :timeout timed-out
+     :mutation-score (if (pos? total)
+                       (* 100.0 (/ (+ killed timed-out) total))
+                       0.0)}))
+
+(defn format-function [{:keys [var]}]
+  (or (some-> var str) "<unknown>"))
+
+(defn report [results]
+  {:results results
+   :summary (summarize results)})
+
+(defn header-line [{:keys [summary]}]
+  (let [{:keys [total killed survived timeout mutation-score]} summary]
+    (if (zero? total)
+      "Mutation analysis: PASS — no mutants generated."
+      (let [status (if (pos? survived) "FAIL" "PASS")]
+        (format "Mutation analysis: %s — %s killed, %s survived, %s timeout of %s (score %.1f%%)"
+                status killed survived timeout total mutation-score)))))
+
+(defn mutant-row
+  [{:keys [id filename row col mutator original replacement status function]}]
+  [(str "#" id)
+   (name status)
+   (format "%s:%s:%s %s" filename row col (format-function function))
+   (format "%s: %s => %s" (name mutator) (pr-str original) (pr-str replacement))])
+
+(def ^:private mutant-columns
+  [{:header "ID" :align :right}
+   {:header "STATUS" :align :left}
+   {:header "LOCATION" :align :left}
+   {:header "MUTATION" :align :left}])
+
+(defn format-text [{:keys [results] :as report-data}]
+  (util/format-table-report (header-line report-data)
+                            mutant-columns
+                            mutant-row
+                            results))
+
+(defn merge-defaults [opts]
+  (util/merge-with-defaults default-options opts))
+
+(defn usage [summary]
+  (str/join
+   \newline
+   ["babacrap mutation: simple mutation testing for babashka/Clojure projects"
+    ""
+    "WARNING: mutates files in place while each mutant runs, then restores them."
+    "Do not interrupt the process. Use git to verify your worktree afterwards."
+    ""
+    "Usage: bb -m babacrap.mutation [options]"
+    ""
+    "Options:"
+    summary]))
+
+(defn error-text [errors summary]
+  (str/join \newline (concat errors ["" (usage summary)])))
+
+(defn dirty-targets-text [dirty]
+  (str/join
+   \newline
+   (concat ["Mutation targets have uncommitted changes:"]
+           (map #(str "  " %) dirty)
+           ["" "Commit or stash them, or re-run with --force."])))
+
+(defn render-report [report-data format]
+  (util/render-report format-text report-data format))
+
+(defn mutation-exit-code [{:keys [summary]}]
+  (if (pos? (:survived summary)) 1 0))
+
+
+;; -- Side effects --
+
+(defn parse-file
+  "IO: read `filename` once and return a map with its source text and
+  parsed forms, ready to feed into pure analysis."
+  [filename]
+  {:filename filename
+   :source (slurp filename)
+   :forms (p/parse-file-all filename)})
 
 (defn collect-file-mutants [filename]
   (let [parsed (parse-file filename)
@@ -203,11 +295,6 @@
 (defn restore-backups! [src-paths]
   (doseq [filename (complexity/source-files src-paths)]
     (restore-backup! filename)))
-
-(defn apply-mutant [source {:keys [start end replacement]}]
-  (str (subs source 0 start)
-       replacement
-       (subs source end)))
 
 (def timeout-marker ::timeout)
 
@@ -269,99 +356,14 @@
         (spit filename original-source)
         (fs/delete-if-exists backup)))))
 
-(defn run-mutation-analysis [opts]
+(defn run-collected-mutation-analysis [opts mutants]
   (restore-backups! (:src-paths opts))
-  (let [mutants (cond->> (collect-mutants (:src-paths opts))
-                  (:limit opts) (take (:limit opts)))]
-    (vec (map #(run-mutant! opts %) mutants))))
+  (vec (map #(run-mutant! opts %) (selected-mutants opts mutants))))
 
-(defn summarize [results]
-  (let [freqs (frequencies (map :status results))
-        total (count results)
-        killed (get freqs :killed 0)
-        timed-out (get freqs :timeout 0)
-        survived (get freqs :survived 0)]
-    {:total total
-     :killed killed
-     :survived survived
-     :timeout timed-out
-     :mutation-score (if (pos? total)
-                       (* 100.0 (/ (+ killed timed-out) total))
-                       0.0)}))
-
-(defn format-function [{:keys [var]}]
-  (or (some-> var str) "<unknown>"))
-
-(defn report [results]
-  {:results results
-   :summary (summarize results)})
-
-(defn header-line [{:keys [summary]}]
-  (let [{:keys [total killed survived timeout mutation-score]} summary]
-    (if (zero? total)
-      "Mutation analysis: PASS — no mutants generated."
-      (let [status (if (pos? survived) "FAIL" "PASS")]
-        (format "Mutation analysis: %s — %s killed, %s survived, %s timeout of %s (score %.1f%%)"
-                status killed survived timeout total mutation-score)))))
-
-(defn mutant-row
-  [{:keys [id filename row col mutator original replacement status function]}]
-  [(str "#" id)
-   (name status)
-   (format "%s:%s:%s %s" filename row col (format-function function))
-   (format "%s: %s => %s" (name mutator) (pr-str original) (pr-str replacement))])
-
-(def ^:private mutant-columns
-  [{:header "ID" :align :right}
-   {:header "STATUS" :align :left}
-   {:header "LOCATION" :align :left}
-   {:header "MUTATION" :align :left}])
-
-(defn format-text [{:keys [results] :as report-data}]
-  (let [header (header-line report-data)]
-    (str \newline
-         (if (empty? results)
-           header
-           (str header
-                \newline
-                (table/render mutant-columns (map mutant-row results)))))))
-
-(defn merge-defaults [opts]
-  (util/merge-with-defaults default-options opts))
-
-(defn usage [summary]
-  (str/join
-   \newline
-   ["babacrap mutation: simple mutation testing for babashka/Clojure projects"
-    ""
-    "WARNING: mutates files in place while each mutant runs, then restores them."
-    "Do not interrupt the process. Use git to verify your worktree afterwards."
-    ""
-    "Usage: bb -m babacrap.mutation [options]"
-    ""
-    "Options:"
-    summary]))
-
-(defn error-text [errors summary]
-  (str/join \newline (concat errors ["" (usage summary)])))
-
-(defn dirty-targets-text [dirty]
-  (str/join
-   \newline
-   (concat ["Mutation targets have uncommitted changes:"]
-           (map #(str "  " %) dirty)
-           ["" "Commit or stash them, or re-run with --force."])))
-
-(defn render-edn [x]
-  (str/trimr (with-out-str (pprint/pprint x))))
-
-(defn render-report [report-data format]
-  (case format
-    :edn (render-edn report-data)
-    :text (format-text report-data)))
-
-(defn mutation-exit-code [{:keys [summary]}]
-  (if (pos? (:survived summary)) 1 0))
+(defn run-mutation-analysis [opts]
+  (run-collected-mutation-analysis
+   opts
+   (or (:mutants opts) (collect-mutants (:src-paths opts)))))
 
 (defn run-result [args]
   (let [{:keys [options errors summary]} (cli/parse-opts args cli-options)
@@ -380,28 +382,25 @@
         ;; Restore any leftover backups before parsing, so a SIGKILLed prior
         ;; run does not feed a half-mutated file into `collect-mutants`.
         (restore-backups! (:src-paths options))
-        (let [targets (distinct (map :filename (collect-mutants (:src-paths options))))
+        (let [mutants (collect-mutants (:src-paths options))
+              targets (distinct (map :filename mutants))
               dirty (when-not (:force options) (dirty-targets targets))]
           (if (seq dirty)
             {:exit 3
              :err (dirty-targets-text dirty)}
-            (let [report-data (report (run-mutation-analysis options))]
+            (let [report-data (report (run-mutation-analysis (assoc options :mutants mutants)))]
               {:exit (mutation-exit-code report-data)
                :out (render-report report-data (:format options))})))))))
 
-(defn emit-result [{:keys [out err]}]
-  (when err
-    (binding [*out* *err*]
-      (println err)))
-  (when out
-    (println out)))
+(defn emit-result [result]
+  (util/emit-result result))
 
 (defn run [args]
   (let [{:keys [exit] :as result} (run-result args)]
-    (emit-result result)
+    (util/emit-result result)
     exit))
 
+;; -- CLI entry point --
+
 (defn -main [& args]
-  (let [exit-code (run args)]
-    (when-not (zero? exit-code)
-      (System/exit exit-code))))
+  (util/exit-nonzero! (run args)))

@@ -2,11 +2,13 @@
   (:gen-class)
   (:require [babacrap.complexity :as complexity]
             [babacrap.table :as table]
+            [babacrap.util :as util]
             [babashka.cli :as cli]
-            [clojure.pprint :as pprint]
             [clojure.string :as str]
             [rewrite-clj.node :as n]
             [rewrite-clj.parser :as p]))
+
+;; -- Pure --
 
 (def cli-spec
   {:src    {:desc    "Source directory or file; can be repeated."
@@ -91,10 +93,6 @@
   (when-not (contains? skip-walk-tags (node-tag node))
     (cons node (mapcat walk-nodes (complexity/children node)))))
 
-(defn function-label [{:keys [var arity-index]}]
-  (str var (when (pos? arity-index)
-             (str "#" arity-index))))
-
 (defn function-info
   "Pure: attach body nodes to complexity inventory facts for one arity."
   [filename ns-sym resource-file arity]
@@ -131,16 +129,6 @@
              :let [info (function-info filename ns-sym resource-file arity)]
              :when info]
          info)))))
-
-(defn parse-file
-  "IO boundary: parse source once."
-  [filename]
-  {:filename filename
-   :forms (p/parse-file-all filename)})
-
-(defn file-functions [filename]
-  (let [{:keys [forms]} (parse-file filename)]
-    (file-functions-from forms filename)))
 
 (defn function-nodes [{:keys [body]}]
   (mapcat walk-nodes body))
@@ -426,27 +414,11 @@
 (defn finding-sort-key [{:keys [severity filename row col rule]}]
   [(- severity) filename row col rule])
 
-(defn analyze-file [filename]
-  (let [functions (file-functions filename)]
-    (->> functions
-         (mapcat analyze-function)
-         (sort-by finding-sort-key)
-         vec)))
-
-(defn analyze-paths [paths]
-  (->> (complexity/source-files paths)
-       (mapcat analyze-file)
-       (sort-by finding-sort-key)
-       vec))
-
 (defn report [findings]
   {:findings findings
    :summary {:total (count findings)
              :by-rule (frequencies (map :rule findings))
              :severity-sum (reduce + 0 (map :severity findings))}})
-
-(defn render-edn [x]
-  (str/trimr (with-out-str (pprint/pprint x))))
 
 (def ^:private finding-columns
   [{:header "SEV" :align :right}
@@ -457,7 +429,7 @@
 (defn finding-row [{:keys [severity rule filename row question] :as f}]
   [(str severity)
    (str rule)
-   (format "%s:%s %s" filename row (function-label f))
+   (format "%s:%s %s" filename row (util/function-label f))
    question])
 
 (defn format-text [{:keys [findings summary]}]
@@ -470,9 +442,7 @@
               (table/render finding-columns (map finding-row findings))))))
 
 (defn render-report [report-data format]
-  (case format
-    :edn (render-edn report-data)
-    :text (format-text report-data)))
+  (util/render-report format-text report-data format))
 
 (defn usage []
   (str/join
@@ -486,6 +456,31 @@
 
 (defn error-text [errors]
   (str/join \newline (concat (map :msg errors) ["" (usage)])))
+
+;; -- Side effects --
+
+(defn parse-file
+  "IO boundary: parse source once."
+  [filename]
+  {:filename filename
+   :forms (p/parse-file-all filename)})
+
+(defn file-functions [filename]
+  (let [{:keys [forms]} (parse-file filename)]
+    (file-functions-from forms filename)))
+
+(defn analyze-file [filename]
+  (let [functions (file-functions filename)]
+    (->> functions
+         (mapcat analyze-function)
+         (sort-by finding-sort-key)
+         vec)))
+
+(defn analyze-paths [paths]
+  (->> (complexity/source-files paths)
+       (mapcat analyze-file)
+       (sort-by finding-sort-key)
+       vec))
 
 (defn parse-args [args]
   (let [errors (volatile! [])
@@ -511,19 +506,12 @@
         {:exit 0
          :out (render-report report-data (:format opts))}))))
 
-(defn emit-result [{:keys [out err]}]
-  (when err
-    (binding [*out* *err*]
-      (println err)))
-  (when out
-    (println out)))
-
 (defn run [args]
   (let [{:keys [exit] :as result} (run-result args)]
-    (emit-result result)
+    (util/emit-result result)
     exit))
 
+;; -- CLI entry point --
+
 (defn -main [& args]
-  (let [exit-code (run args)]
-    (when-not (zero? exit-code)
-      (System/exit exit-code))))
+  (util/exit-nonzero! (run args)))

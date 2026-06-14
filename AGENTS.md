@@ -73,7 +73,7 @@ Note: Cloverage babashka support is in the git checkout tested during this work.
 
 - Use TDD for behavior changes: write the failing test first (RED), implement the minimal fix (GREEN), then refactor.
 - Run focused checks during edits, then run the full required checks before handing off.
-- `bb test` and `bb lint` must pass before review / handoff.
+- `bb test`, `bb lint`, and `bb dry` must pass before review / handoff.
 - Move tests with code when extracting or relocating behavior.
 
 ## MUST
@@ -81,6 +81,7 @@ Note: Cloverage babashka support is in the git checkout tested during this work.
 - **TDD.** RED → GREEN → refactor for non-trivial behavior changes.
 - **FCIS.** Keep a functional core and imperative shell. Pure functions take all inputs as arguments and do not read env, slurp files, or shell out. Side-effecting functions orchestrate I/O and call pure helpers.
 - **DRY.** Keep one source of truth per concern. Search existing namespaces before adding helpers.
+- **Duplicate scan.** Run `bb dry` at the end of each development task and remove redundant duplicates it reports.
 - **YAGNI.** Do not add abstractions before a second caller or clear need exists.
 - **KISS.** Prefer the simplest solution satisfying the requirement.
 - **Use babashka idioms.** Do not hand-roll behavior provided by `babashka.cli`, `babashka.fs`, or `babashka.process`.
@@ -105,7 +106,7 @@ Anything bigger than a quick single-commit fix should follow this flow:
 1. Create or identify a todo/work item when appropriate.
 2. Branch with a short descriptive name; use a worktree for large stories.
 3. Develop with TDD: RED → GREEN → refactor, using checkpoint commits as useful.
-4. Run `bb test` and `bb lint`.
+4. Run `bb test`, `bb lint`, and `bb dry`.
 5. Request peer review via an inter-agent channel for larger changes.
 6. Address findings in new commits; do not amend after review unless explicitly agreed.
 7. Wait for human approval before push/merge when the user has not explicitly delegated it.
@@ -167,6 +168,7 @@ Run before handing off changes:
 ```sh
 bb test
 bb lint
+bb dry
 ```
 
 Try the CLI on the fixture project:
@@ -205,14 +207,17 @@ bb mutate --src src --test-command 'bb -cp src:resources:test:test/fixtures/src:
 
 ## Commit message style
 
-Use the requested format:
+Use conventional type prefixes:
 
 ```text
-[what] one-line-descr.
+[type] one-line summary
 ```
 
-Example:
+Common types: `feat`, `fix`, `refactor`, `test`, `docs`, `chore`.
+
+Examples:
 
 ```text
-[babacrap] add initial CRAP analysis tool.
+[chore] add dry duplicate scan task
+[fix] restore mutation backups on startup
 ```

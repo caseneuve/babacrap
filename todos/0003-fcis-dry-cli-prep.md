@@ -1,6 +1,6 @@
 ---
 title: Prepare CLI code for bbin dispatcher with FCIS/DRY cleanup
-status: open
+status: done
 priority: high
 type: refactor
 labels: [cli, fcis]
@@ -25,21 +25,21 @@ Doing this before `0001-bbin-installable-cli.md` should reduce churn when adding
 
 ## Acceptance Criteria
 
-- [ ] Characterization tests or smoke assertions cover current help, validation-error, text output, EDN output, and exit-code behavior for `crap`, `mutate`, and `detangle` before refactoring shared CLI helpers.
-- [ ] Shared CLI/report helpers that are truly identical are extracted to `babacrap.util` or another existing appropriate namespace.
-- [ ] Only extract helpers with at least two real callers and identical semantics; do not introduce generic CLI frameworks, protocols, or new namespaces for this cleanup.
-- [ ] `render-edn` and `emit-result` are extracted if their stdout/stderr behavior remains byte-for-byte compatible.
-- [ ] `function-label` is extracted only if the shared helper matches both CRAP and detangle report semantics.
-- [ ] Do not extract `run-result`, `run`, or `-main` unless the resulting code is simpler and tests prove exit/stdout/stderr behavior is unchanged.
-- [ ] `src/babacrap/core.clj`, `src/babacrap/mutation.clj`, and `src/babacrap/detangle.clj` have clear FCIS section markers, in this order where applicable: `;; -- Pure --`, `;; -- Side effects --`, and `;; -- CLI entry point --`.
-- [ ] Existing code is reviewed for FCIS compliance, not only rearranged: identify functions that mix transformation with I/O/process/env/filesystem concerns and either separate them when small/safe or document follow-up work when separation would be too broad for this todo.
-- [ ] Pure helpers are positioned before side-effecting orchestration in each touched namespace, and side-effecting functions delegate to pure helpers rather than mixing I/O with transformation logic where practical.
-- [ ] Existing functions are moved only enough to make FCIS boundaries clear; avoid broad rewrites.
-- [ ] No user-visible CLI behavior changes are introduced.
-- [ ] Existing `bb crap`, `bb mutate`, and `bb detangle` tasks retain current behavior.
-- [ ] Mutation normal run collects mutants once and reuses that collection for dirty-target detection and execution, without changing `--limit`, `--force`, backup-restore, or dirty-worktree behavior; if this is not fixed here, create a follow-up todo documenting why and what behavior must be preserved.
-- [ ] Tests cover any extracted helpers or changed orchestration paths where existing coverage is insufficient.
-- [ ] `bb test` and `bb lint` pass.
+- [x] Characterization tests or smoke assertions cover current help, validation-error, text output, EDN output, and exit-code behavior for `crap`, `mutate`, and `detangle` before refactoring shared CLI helpers.
+- [x] Shared CLI/report helpers that are truly identical are extracted to `babacrap.util` or another existing appropriate namespace.
+- [x] Only extract helpers with at least two real callers and identical semantics; do not introduce generic CLI frameworks, protocols, or new namespaces for this cleanup.
+- [x] `render-edn` and `emit-result` are extracted if their stdout/stderr behavior remains byte-for-byte compatible.
+- [x] `function-label` is extracted only if the shared helper matches both CRAP and detangle report semantics.
+- [x] Do not extract `run-result`, `run`, or `-main` unless the resulting code is simpler and tests prove exit/stdout/stderr behavior is unchanged.
+- [x] `src/babacrap/core.clj`, `src/babacrap/mutation.clj`, and `src/babacrap/detangle.clj` have clear FCIS section markers, in this order where applicable: `;; -- Pure --`, `;; -- Side effects --`, and `;; -- CLI entry point --`.
+- [x] Existing code is reviewed for FCIS compliance, not only rearranged: identify functions that mix transformation with I/O/process/env/filesystem concerns and either separate them when small/safe or document follow-up work when separation would be too broad for this todo.
+- [x] Pure helpers are positioned before side-effecting orchestration in each touched namespace, and side-effecting functions delegate to pure helpers rather than mixing I/O with transformation logic where practical.
+- [x] Existing functions are moved only enough to make FCIS boundaries clear; avoid broad rewrites.
+- [x] No user-visible CLI behavior changes are introduced.
+- [x] Existing `bb crap`, `bb mutate`, and `bb detangle` tasks retain current behavior.
+- [x] Mutation normal run collects mutants once and reuses that collection for dirty-target detection and execution, without changing `--limit`, `--force`, backup-restore, or dirty-worktree behavior; if this is not fixed here, create a follow-up todo documenting why and what behavior must be preserved.
+- [x] Tests cover any extracted helpers or changed orchestration paths where existing coverage is insufficient.
+- [x] `bb test` and `bb lint` pass.
 
 ## Affected Files
 
